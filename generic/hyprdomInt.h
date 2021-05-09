@@ -1,0 +1,117 @@
+#ifndef _NODE_INT_H
+#define _NODE_INT_H
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <expat.h>
+#include "tclstuff.h"
+#include "dedup.h"
+
+#ifdef __builtin_expect
+#	define likely(exp)		__builtin_expect(!!(exp), 1)
+#	define unlikely(exp)	__builtin_expect(!!(exp), 0)
+#else
+#	define likely(exp)		(exp)
+#	define unlikely(exp)	(exp)
+#endif
+
+// Taken from tclInt.h:
+#if !defined(INT2PTR) && !defined(PTR2INT)
+#   if defined(HAVE_INTPTR_T) || defined(intptr_t)
+#       define INT2PTR(p) ((void *)(intptr_t)(p))
+#       define PTR2INT(p) ((int)(intptr_t)(p))
+#   else
+#       define INT2PTR(p) ((void *)(p))
+#       define PTR2INT(p) ((int)(p))
+#   endif
+#endif
+#if !defined(UINT2PTR) && !defined(PTR2UINT)
+#   if defined(HAVE_UINTPTR_T) || defined(uintptr_t)
+#       define UINT2PTR(p) ((void *)(uintptr_t)(p))
+#       define PTR2UINT(p) ((unsigned int)(uintptr_t)(p))
+#   else
+#       define UINT2PTR(p) ((void *)(p))
+#       define PTR2UINT(p) ((unsigned int)(p))
+#   endif
+#endif
+
+
+enum node_type {
+	ELEMENT = 0,
+	ATTRIBUTE,
+	TEXT,
+	COMMENT,
+	PI,
+	NAMESPACE,
+	NODE_TYPE_END
+};
+
+static const char* type_names = {
+	"ELEMENT",
+	"ATTRIBUTE",
+	"TEXT",
+	"COMMENT",
+	"PI",
+	"NAMESPACE",
+	(const char*)NULL
+};
+
+
+struct doc {
+	Tcl_Obj*			docname;		// name(doc), thing(docname) retrieves this struct
+	uint32_t			nodelist_len;	// The allocated space, not all slots are necessarily used
+	int32_t				refcount;
+	Tcl_HashTable		name_ids;		// Map of name -> numeric id
+	Tcl_Obj*			names;			// reverse of name_ids, id'th element is the name
+	uint32_t			slot_next;		// Next index into nodes[] to scan for free nodes when allocating new ones
+	struct node*		root;
+	struct node**		nodes;			// Array of nodes
+	struct dedup_pool*	dedup_pool;
+};
+
+
+struct node {
+	enum node_type	type;
+	struct doc*		doc;
+	int32_t			refcount;	// <= 0 for deleted nodes
+	uint32_t		epoch;		// 0 initially for all nodes, when a node slot is freed and later reassigned, this is incremented
+	uint32_t		parent;
+	uint32_t		first_child;
+	uint32_t		last_child;
+	uint32_t		prior_sibling;
+	uint32_t		next_sibling;
+	uint32_t		name_id;
+	Tcl_Obj*		value;		// ATTRIBUTE: attribute value
+								// TEXT: text value
+};
+
+
+// a reference to an entry in doc->nodes, with epoch info.  Fits within Tcl_ObjIntRep
+#pragma pack(push, 1)
+struct node_slot {
+	struct doc*		doc;
+	uint32_t		slot;
+	uint32_t		epoch;
+};
+#pragma pack(pop)
+
+
+struct thread_data {
+	int				initialized;
+	Tcl_Obj*		name_valid;
+};
+
+
+struct parse_context {
+	Tcl_Interp*			interp;
+	XML_Parser*			parser;
+	int					rc;
+	struct node_slot	cx;
+	Tcl_Obj*			text_node_name;
+	Tcl_Obj*			comment_node_name;
+	Tcl_Obj*			pi_node_name;
+};
+
+
+#endif

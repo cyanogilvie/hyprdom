@@ -1,0 +1,6 @@
+*.swp
+*.o
+*.so
+core
+.gitignore
+tclconfig
