@@ -51,7 +51,7 @@ struct dedup_pool* new_dedup_pool(Tcl_Interp* interp /* may be NULL */) //<<<
 	new_pool->tcl_empty = NULL;
 
 	if (interp)
-		replace_tclobj(&new_pool->tcl_empty, Tcl_GetAssocData(interp, "hyprdom_dedup_tclempty"));
+		replace_tclobj(&new_pool->tcl_empty, Tcl_GetAssocData(interp, "hyprdom_dedup_tclempty", NULL));
 
 	if (new_pool->tcl_empty == NULL) {
 		replace_tclobj(&new_pool->tcl_empty, Tcl_NewObj());

@@ -33,6 +33,7 @@ struct kc_entry {
 #		define FFS				ffsll
 #	endif
 #	define FREEMAP_TYPE		long long
+#	define KC_ENTRIES		6*8*sizeof(FREEMAP_TYPE)	// Must be an integer multiple of 8*sizeof(FREEMAP_TYPE)
 #elif defined(_MSC_VER) && defined(_WIN64) && _MSC_VER >= 1400
 #	define FFS_TMP_STORAGE	unsigned long ix;
 /* _BitScanForward64 numbers bits starting with 0, ffsll starts with 1 */

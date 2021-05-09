@@ -34,7 +34,7 @@ static inline void Tcl_FreeIntRep(Tcl_Obj* obj)
 static inline void Tcl_StoreIntRep(Tcl_Obj* objPtr, const Tcl_ObjType* typePtr, const Tcl_ObjIntRep* irPtr)
 {
 	objPtr->typePtr = typePtr;
-	memcpy(objPtr->internalRep, irPtr, sizeof(Tcl_ObjIntRep));
+	memcpy(&objPtr->internalRep, irPtr, sizeof(Tcl_ObjIntRep));
 }
 #endif
 
