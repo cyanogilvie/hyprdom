@@ -6,7 +6,7 @@ package require hyprdom
 
 test new-1.0 {Construct a new DOM} -body { #<<<
 	set root	[hyprdom new foo]
-	hyprdom	free $root
+	hyprdom free $root
 	set root
 } -cleanup {
 	unset -nocomplain root
@@ -15,7 +15,7 @@ test new-1.0 {Construct a new DOM} -body { #<<<
 test new-1.1 {Construct a new DOM} -body { #<<<
 	set root	[hyprdom new foo]
 } -cleanup {
-	hyprdom	free $root
+	hyprdom free $root
 	unset -nocomplain root
 } -match regexp -result {^doc:[A-Z][a-z]+[A-Z][a-z]+ 1 0$}
 #>>>

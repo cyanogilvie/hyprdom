@@ -50,7 +50,7 @@ struct doc {
 	Tcl_HashTable		name_ids;		// Map of name -> numeric id
 	Tcl_Obj*			names;			// reverse of name_ids, id'th element is the name
 	uint32_t			slot_next;		// Next index into nodes[] to scan for free nodes when allocating new ones
-	struct node*		root;
+	uint32_t			root;
 	struct node*		nodes;			// Array of nodes
 	struct dedup_pool*	dedup_pool;
 };

@@ -87,6 +87,7 @@ void free_dedup_pool(struct dedup_pool* p) //<<<
 		e->val = NULL;
 		he = Tcl_NextHashEntry(&search);
 	}
+	Tcl_DeleteHashTable(&p->kc);
 	p->kc_count = 0;
 	replace_tclobj(&p->tcl_empty, NULL);
 

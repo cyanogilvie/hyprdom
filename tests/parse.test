@@ -1,0 +1,25 @@
+package require tcltest
+namespace import ::tcltest::*
+::tcltest::loadTestedCommands
+
+package require hyprdom
+proc readfile fn {
+	set h	[open $fn r]
+	try {read $h} finally {close $h}
+}
+
+test parse-1.0 {Construct a new DOM from XML} -body { #<<<
+	set root	[hyprdom parse [readfile xpath/xpath-grammar.xml]]
+	string length "$root "	;# Force a string rep
+	puts "root rep: [tcl::unsupported::representation $root]"
+	hyprdom free $root
+	set root
+} -cleanup {
+	unset -nocomplain root
+} -match regexp -result {^doc:[A-Z][a-z]+[A-Z][a-z]+ 1 0$}
+#>>>
+
+::tcltest::cleanupTests
+return
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4
+

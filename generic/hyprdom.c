@@ -11,9 +11,9 @@ int g_pagesize = 4096;		/* This will be updated to the real value in Hyprdom_Ini
 #define PI_NODE_NAME		"<#pi>"
 #define COMMENT_NODE_NAME	"<#comment>"
 */
-#define TEXT_NODE_NAME		"#text"
-#define PI_NODE_NAME		"#pi"
-#define COMMENT_NODE_NAME	"#comment"
+#define TEXT_NODE_NAME		"_text_"
+#define PI_NODE_NAME		"_pi_"
+#define COMMENT_NODE_NAME	"_comment_"
 
 #define NAME_START_CHAR	":A-Z_a-z\\xC0-\\xF6\\xF8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD\\u10000-\\uEFFFF"
 #define NAME_CHAR		".0-9\\xB7\\u0300-\\u036F\\u203F-\\u2040-"
@@ -346,8 +346,8 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 	replace_tclobj(&(*doc)->names, Tcl_NewListObj(0, NULL));
 
 	(*doc)->nodelist_len = initial_slots;
-	(*doc)->root = &(*doc)->nodes[1];				// slot number 0 is reserved to mean NULL
-	if (TCL_OK != (rc = set_node_name(interp, (*doc)->root, root_name))) goto done;
+	(*doc)->root = 1;				// slot number 0 is reserved to mean NULL
+	if (TCL_OK != (rc = set_node_name(interp, &(*doc)->nodes[(*doc)->root], root_name))) goto done;
 	(*doc)->slot_next = 2;
 #if DEDUP
 	(*doc)->dedup_pool = new_dedup_pool(interp);
@@ -542,10 +542,10 @@ done:
 void detach_node(struct node* node) //<<<
 {
 	struct node*	nodes = node->doc->nodes;
-	uint32_t		myslot = node - nodes;
 
 	if (node->parent) {
 		struct node*	parent = &nodes[node->parent];
+		const uint32_t	myslot = node - nodes;
 		if (parent->first_child == myslot)	parent->first_child	= node->next_sibling;
 		if (parent->last_child  == myslot)	parent->last_child	= node->prior_sibling;
 	}
@@ -557,17 +557,17 @@ void detach_node(struct node* node) //<<<
 //>>>
 void free_node(struct node* node) //<<<
 {
-	struct node*	child = NULL;
 	struct node*	nodes = node->doc->nodes;
 	const uint32_t	myslot = node - nodes;
+	uint32_t		childslot;
 
 	detach_node(node);
 
-	child = &nodes[node->first_child];
-	while (child) {
-		struct node*	next = &nodes[child->next_sibling];
+	childslot = node->first_child;
+	while (childslot) {
+		struct node*	child = &nodes[childslot];
+		childslot = child->next_sibling;
 		DecrRefNode(child);
-		child = next;
 	}
 	node->first_child = 0;
 	node->last_child = 0;
@@ -616,7 +616,7 @@ void free_doc(struct doc** doc) //<<<
 	replace_tclobj(&(*doc)->names, NULL);
 
 	(*doc)->nodelist_len = 0;
-	(*doc)->root = NULL;
+	(*doc)->root = 0;
 	(*doc)->refcount = -1;
 	if ((*doc)->dedup_pool) {
 		free_dedup_pool((*doc)->dedup_pool); (*doc)->dedup_pool = NULL;
@@ -630,15 +630,21 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 	struct node*	new = NULL;
 	uint32_t		i;
 
-	for (i=doc->slot_next; i<doc->nodelist_len; i++)
-		if (doc->nodes[i].refcount <= 0)
+	for (i=doc->slot_next; i<doc->nodelist_len; i++) {
+		if (doc->nodes[i].refcount <= 0) {
 			new = &doc->nodes[i];
+			break;
+		}
+	}
 
 	if (i == doc->nodelist_len) { // Ran out of slots, need to grow
-		int				pages = (sizeof(struct node) * doc->nodelist_len) / g_pagesize;
+		TIME("Ran out of nodes, scaling", {
+		// +1: compensate for integer division, otherwise we're initially truncated to 0
+		int				pages = ((sizeof(struct node) * doc->nodelist_len) / g_pagesize) + 1;
 		size_t			memsize;
 		struct node*	newnodes = NULL;
 		uint32_t		new_slots;
+		uint32_t		j;
 
 		// Grow by doubling until we hit 10 MiB, then grow linearly
 		if (pages * g_pagesize < 10485760) {
@@ -648,13 +654,18 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 		}
 		new_slots = (pages*g_pagesize) / sizeof(struct node);
 		memsize = sizeof(struct node)*new_slots;
+		DBG("Doc %s hit nodelimit %d, growing to %d (%ld bytes)\n", Tcl_GetString(doc->docname), doc->nodelist_len, new_slots, memsize);
 		posix_memalign((void*)&newnodes, g_pagesize, memsize);
 		memcpy(newnodes, doc->nodes, doc->nodelist_len * sizeof(struct node));
 		memset(newnodes+i, 0, sizeof(struct node)*(new_slots-i));
 		free(doc->nodes); doc->nodes = newnodes;
 		doc->nodelist_len = new_slots;
 
+		for (j=i; j<doc->nodelist_len; j++)
+			doc->nodes[j].doc = doc;
+
 		new = &doc->nodes[i];
+		});
 	}
 
 	new->refcount = 1;
@@ -675,7 +686,7 @@ static int new_doc_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *
 	CHECK_ARGS(1, "rootname");
 
 	if (TCL_OK != (rc = new_doc(interp, 0, Tcl_GetString(objv[1]), &doc))) goto done;
-	if (TCL_OK != (rc = get_node_slot(interp, doc->root, &slot_ref)))      goto done;
+	if (TCL_OK != (rc = get_node_slot(interp, &doc->nodes[doc->root], &slot_ref)))      goto done;
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&slot_ref));
 
 done:
@@ -708,17 +719,19 @@ static void pcb_start_element(void* userData, const XML_Char* name, const XML_Ch
 	struct node_slot		myslot = {};
 	struct node*			attrnode = NULL;
 
+	//DBG("pcb_start_element: (%s)\n", name);
 	if (unlikely(pc->cx.doc == NULL)) {
 		// First element: create the doc and make this the root
 		if (TCL_OK != (pc->rc = new_doc(pc->interp, 0, name, &pc->cx.doc))) goto err;
-		node = pc->cx.doc->root;
+		node = &pc->cx.doc->nodes[pc->cx.doc->root];
+		//DBG("Created new doc %s with root %s\n", Tcl_GetString(pc->cx.doc->docname), name);
 		if (TCL_OK != (pc->rc = get_node_slot(pc->interp, node, &myslot))) goto err;
 	} else {
 		node = new_node(pc->cx.doc, &myslot);
 		if (TCL_OK != (pc->rc = set_node_name(pc->interp, node, name))) goto err;
 	}
 
-	while (attrib) {
+	while (*attrib) {
 		const XML_Char*		attrname  = *attrib++;
 		const XML_Char*		attrvalue = *attrib++;
 		struct node_slot	attrslot = {};
@@ -759,6 +772,7 @@ static void pcb_end_element(void* userData, const XML_Char* name) //<<<
 	struct parse_context*	pc = (struct parse_context*)userData;
 	struct node*			node = &pc->cx.doc->nodes[pc->cx.slot];
 
+	//DBG("pcb_end_element: (%s)\n", name);
 	pc->cx.slot = node->parent;
 }
 
@@ -770,6 +784,7 @@ void pcb_text(void* userData, const XML_Char* s, int len) //<<<
 	struct node_slot		myslot = {};
 	uint32_t				name_id;
 
+	//DBG("pcb_text\n");
 	node = new_node(pc->cx.doc, &myslot);
 	node->type = TEXT;
 	replace_tclobj(&node->value, get_string(pc->cx.doc->dedup_pool, s, len));
@@ -804,6 +819,8 @@ void pcb_pi(void* userData, const XML_Char* target, const XML_Char* data) //<<<
 	Tcl_Obj*				ov[2] = {NULL, NULL};
 	uint32_t				name_id;
 
+	if (unlikely(pc->cx.doc == NULL)) return;
+	//DBG("pcb_pi: (%s), (%s)\n", target, data);
 	node = new_node(pc->cx.doc, &myslot);
 	node->type = PI;
 	replace_tclobj(&ov[0], get_string(pc->cx.doc->dedup_pool, target, -1));
@@ -843,6 +860,9 @@ void pcb_comment(void* userData, const XML_Char* data) //<<<
 	struct node_slot		myslot = {};
 	uint32_t				name_id;
 
+	//DBG("pcb_comment: %s\n", data);
+	if (unlikely(pc->cx.doc == NULL)) return;
+
 	node = new_node(pc->cx.doc, &myslot);
 	node->type = COMMENT;
 	replace_tclobj(&node->value, get_string(pc->cx.doc->dedup_pool, data, -1));
@@ -870,8 +890,6 @@ err:
 //>>>
 static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *const objv[]) //<<<
 {
-	int						rc = TCL_OK;
-	struct doc*				doc = NULL;
 	struct node_slot		root_slot = {};
 	const char*				xmldata = NULL;
 	int						xmllen;
@@ -891,9 +909,12 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 
 	CHECK_ARGS(1, "xml");
 
+	//DBG("parse_cmd\n");
 	pc.parser = XML_ParserCreate(NULL);
 
 	xmldata = Tcl_GetStringFromObj(objv[1], &xmllen);
+
+	XML_SetUserData(pc.parser, &pc);
 
 	// TODO: how to ensure that XML_Char is char and utf-8 encoded?
 	XML_SetElementHandler              (pc.parser, pcb_start_element, pcb_end_element);
@@ -902,15 +923,27 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 	XML_SetCommentHandler              (pc.parser, pcb_comment);
 
 	if (XML_STATUS_ERROR == XML_Parse(pc.parser, xmldata, xmllen, 1)) {
-		pc.rc = TCL_ERROR;
-		Tcl_SetObjResult(interp, Tcl_ObjPrintf("%s at line %lu\n",
-				XML_ErrorString(XML_GetErrorCode(pc.parser)),
-				XML_GetCurrentLineNumber(pc.parser)));
+		if (pc.rc == TCL_OK) {
+			pc.rc = TCL_ERROR;
+			Tcl_SetObjResult(interp, Tcl_ObjPrintf("%s at line %lu",
+					XML_ErrorString(XML_GetErrorCode(pc.parser)),
+					XML_GetCurrentLineNumber(pc.parser)));
+		} else {
+			Tcl_SetObjResult(interp, Tcl_ObjPrintf("%s: %s at line %lu",
+					XML_ErrorString(XML_GetErrorCode(pc.parser)),
+					Tcl_GetString(Tcl_GetObjResult(interp)),
+					XML_GetCurrentLineNumber(pc.parser)));
+		}
 		goto done;
 	}
 
-	if (pc.rc == TCL_OK) {
-		if (TCL_OK != (rc = get_node_slot(interp, doc->root, &root_slot))) goto done;
+	if (likely(pc.rc == TCL_OK)) {
+		if (unlikely(pc.cx.doc == NULL)) {
+			pc.rc = TCL_ERROR;
+			Tcl_SetObjResult(interp, Tcl_ObjPrintf("No document created by parse"));
+			goto done;
+		}
+		if (TCL_OK != (pc.rc = get_node_slot(interp, &pc.cx.doc->nodes[pc.cx.doc->root], &root_slot))) goto done;
 		Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&root_slot));
 	}
 
@@ -924,7 +957,7 @@ done:
 	replace_tclobj(&pc.pi_node_name, NULL);
 	pc.cx.doc = NULL;
 	pc.interp = NULL;
-	return rc;
+	return pc.rc;
 }
 
 //>>>
