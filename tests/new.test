@@ -1,0 +1,19 @@
+package require tcltest
+namespace import ::tcltest::*
+::tcltest::loadTestedCommands
+
+package require hyprdom
+
+test new-1.0 {Construct a new DOM} -body { #<<<
+	set root	[hyprdom new]
+	hyprdom	free $root
+	set root
+} -cleanup {
+	unset -nocomplain root
+} -match regexp -result {^[A-Z][a-z]+[A-Z][a-z]+ 1 0}
+#>>>
+
+::tcltest::cleanupTests
+return
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4
+

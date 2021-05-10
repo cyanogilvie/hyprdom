@@ -77,8 +77,8 @@ ENABLE_DEDUP
 TEA_ADD_SOURCES([hyprdom.c dedup.c names.c])
 TEA_ADD_HEADERS([])
 TEA_ADD_INCLUDES([])
-TEA_ADD_LIBS([])
-TEA_ADD_CFLAGS([])
+TEA_ADD_LIBS([`pkg-config expat --libs`])
+TEA_ADD_CFLAGS([`pkg-config expat --cflags`])
 TEA_ADD_STUB_SOURCES([])
 TEA_ADD_TCL_SOURCES([])
 

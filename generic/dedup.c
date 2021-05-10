@@ -33,7 +33,7 @@ static void mark_free(FREEMAP_TYPE* freemap, int idx) //<<<
 }
 
 //>>>
-void free_hyperdom_dedup_tclempty(ClientData cdata, Tcl_Interp* interp) //<<<
+void free_hyprdom_dedup_tclempty(ClientData cdata, Tcl_Interp* interp) //<<<
 {
 	Tcl_DecrRefCount((Tcl_Obj*)cdata);	// AssocData ref
 	cdata = NULL;
@@ -58,7 +58,7 @@ struct dedup_pool* new_dedup_pool(Tcl_Interp* interp /* may be NULL */) //<<<
 
 		if (interp) {
 			Tcl_IncrRefCount(new_pool->tcl_empty);	// AssocData ref
-			Tcl_SetAssocData(interp, "hyprdom_dedup_tclempty", free_hyperdom_dedup_tclempty, new_pool->tcl_empty);
+			Tcl_SetAssocData(interp, "hyprdom_dedup_tclempty", free_hyprdom_dedup_tclempty, new_pool->tcl_empty);
 		}
 	}
 

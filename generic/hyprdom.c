@@ -1463,7 +1463,10 @@ done:
 
 //>>>
 
-int Hyperdom_Init(Tcl_Interp* interp) //<<<
+#ifdef __cplusplus
+extern "C" {
+#endif
+DLLEXPORT int Hyprdom_Init(Tcl_Interp* interp) //<<<
 {
 	int				rc = TCL_OK;
 	Tcl_Namespace*	ns = NULL;
@@ -1499,5 +1502,19 @@ done:
 }
 
 //>>>
+DLLEXPORT int Hyprdom_SafeInit(Tcl_Interp* interp) //<<<
+{
+	// No unsafe features
+	return Hyprdom_Init(interp);
+}
 
+//>>>
+#ifdef __cplusplus
+}
+#endif
+
+/* Local Variables: */
+/* tab-width: 4 */
+/* c-basic-offset: 4 */
+/* End: */
 // vim: foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4

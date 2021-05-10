@@ -1,4 +1,3 @@
-#if DEBUG
 #include <tcl.h>
 #include "names.h"
 #include <stdlib.h>
@@ -314,11 +313,11 @@ static int	maxlen_adjective = 0;
 static int	maxlen_noun = 0;
 static int	maxlen_output = 0;
 
-Tcl_ThreadDatakey		names_thread_cx;
+Tcl_ThreadDataKey		names_thread_cx;
 struct thread_cx {
-	static int				hash_tables_initialized = 0;
-	static Tcl_HashTable	things;			// Map void* -> name
-	static Tcl_HashTable	names;			// Map name -> void*
+	int				hash_tables_initialized;
+	Tcl_HashTable	things;			// Map void* -> name
+	Tcl_HashTable	names;			// Map name -> void*
 };
 
 Tcl_ThreadDataKey		outbuf;
@@ -340,7 +339,7 @@ static void init_global()
 		}
 	}
 	maxlen_output = maxlen_adjective + maxlen_noun + 1;
-	Tcl_MutexUnLock(&global_init_mutex);
+	Tcl_MutexUnlock(&global_init_mutex);
 }
 
 
@@ -352,18 +351,18 @@ static void init(struct thread_cx* cx)
 
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 
-	if (cx.hash_tables_initialized == 0) {
+	if (cx->hash_tables_initialized == 0) {
 		if (maxlen_output == 0) init_global();
 
 		srandom((int)ts.tv_nsec);
 
-		Tcl_InitHashTable(&things, TCL_ONE_WORD_KEYS);
-		Tcl_InitHashTable(&names, TCL_STRING_KEYS);
+		Tcl_InitHashTable(&cx->things, TCL_ONE_WORD_KEYS);
+		Tcl_InitHashTable(&cx->names, TCL_STRING_KEYS);
 
-		he = Tcl_CreateHashEntry(&names, "NULL", &new);
+		he = Tcl_CreateHashEntry(&cx->names, "NULL", &new);
 		Tcl_SetHashValue(he, NULL);
 
-		hash_tables_initialized = 1;
+		cx->hash_tables_initialized = 1;
 	}
 }
 
@@ -383,11 +382,11 @@ const char* randwords()
 void* thing(const char *const name)
 {
 	Tcl_HashEntry*		he = NULL;
-	struct thread_cx*	cx = Tcl_GetThreadData(names_thread_cx, sizeof(struct thread_cx));
+	struct thread_cx*	cx = Tcl_GetThreadData(&names_thread_cx, sizeof(struct thread_cx));
 
 	if (cx->hash_tables_initialized == 0) init(cx);
 
-	he = Tcl_FindHashEntry(&things, name);
+	he = Tcl_FindHashEntry(&cx->things, name);
 
 	return Tcl_GetHashValue(he);
 }
@@ -395,7 +394,7 @@ void* thing(const char *const name)
 
 const char* name(const void *const thing)
 {
-	struct thread_cx*	cx = Tcl_GetThreadData(names_thread_cx, sizeof(struct thread_cx));
+	struct thread_cx*	cx = Tcl_GetThreadData(&names_thread_cx, sizeof(struct thread_cx));
 	int					new;
 	Tcl_HashEntry*		he_thing = NULL;
 	Tcl_HashEntry*		he_name = NULL;
@@ -406,16 +405,16 @@ const char* name(const void *const thing)
 	if (thing == NULL)
 		return "NULL";
 
-	if (cx->hash_tables_initialized == 0) init();
+	if (cx->hash_tables_initialized == 0) init(cx);
 
-	he_thing = Tcl_CreateHashEntry(&things, thing, &new);
+	he_thing = Tcl_CreateHashEntry(&cx->things, thing, &new);
 	if (!new)
 		return Tcl_GetHashValue(he_thing);
 
 	new = 0;
 	while (!new) {
 		candidate = randwords();
-		he_name = Tcl_CreateHashEntry(&names, candidate, &new);
+		he_name = Tcl_CreateHashEntry(&cx->names, candidate, &new);
 	}
 
 	chosenlen = strlen(candidate)+1;
@@ -430,26 +429,23 @@ const char* name(const void *const thing)
 
 void free_thing(const void *const thing)
 {
-	struct thread_cx*	cx = Tcl_GetThreadData(names_thread_cx, sizeof(struct thread_cx));
-	int					new;
+	struct thread_cx*	cx = Tcl_GetThreadData(&names_thread_cx, sizeof(struct thread_cx));
 	Tcl_HashEntry*		he_thing = NULL;
 	Tcl_HashEntry*		he_name = NULL;
 	const char*			name = NULL;
-	char*				chosen = NULL;
-	int					chosenlen;
 
 	if (thing == NULL)
-		return "NULL";
+		return;
 
-	if (cx->hash_tables_initialized == 0) init();
+	if (cx->hash_tables_initialized == 0) init(cx);
 
-	he_thing = Tcl_FindHashEntry(&things, thing);
+	he_thing = Tcl_FindHashEntry(&cx->things, thing);
 	if (!he_thing) return;
 
 	name = Tcl_GetHashValue(he_thing);
 
 	if (name) {
-		he_name = Tcl_FindHashEntry(&names, name);
+		he_name = Tcl_FindHashEntry(&cx->names, name);
 		if (he_name)
 			Tcl_DeleteHashEntry(he_name);
 
@@ -459,5 +455,4 @@ void free_thing(const void *const thing)
 }
 
 
-#endif
 // vim: ts=4 shiftwidth=4
