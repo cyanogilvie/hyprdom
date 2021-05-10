@@ -12,3 +12,4 @@ configure
 pkgIndex.tcl
 doc/hyprdom.n
 tags
+valgrind_suppressions

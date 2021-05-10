@@ -339,6 +339,33 @@ static void init_global()
 }
 
 
+static void names_thread_cleanup(ClientData cdata)
+{
+	struct thread_cx*	cx = (struct thread_cx*)cdata;
+	Tcl_HashEntry*		he = NULL;
+	Tcl_HashSearch		search;
+
+	if (cx->hash_tables_initialized) {
+		DBG("Freeing names thread_cx for %s\n", name("thread_cx:", cx));
+		he = Tcl_FirstHashEntry(&cx->things, &search);
+
+		while (he) {
+			const char* name = Tcl_GetHashValue(he);
+
+			if (name) {
+				ckfree(name);
+				name = NULL;
+			}
+			he = Tcl_NextHashEntry(&search);
+		}
+		Tcl_DeleteHashTable(&cx->things);
+
+		Tcl_DeleteHashTable(&cx->names);
+		cx->hash_tables_initialized = 0;
+	}
+}
+
+
 static void init(struct thread_cx* cx)
 {
 	int				new;
@@ -358,31 +385,48 @@ static void init(struct thread_cx* cx)
 		he = Tcl_CreateHashEntry(&cx->names, "NULL", &new);
 		Tcl_SetHashValue(he, NULL);
 
+		Tcl_CreateThreadExitHandler(names_thread_cleanup, cx);
 		cx->hash_tables_initialized = 1;
+		DBG("Allocated names thread_cx for %s\n", name("thread_cx:", cx));
 	}
 }
 
 
-const char* randwords()
+const char* randwords(const char* prefix)
 {
-	int			adj  = random() % adjectivesc;
-	int			noun = random() % nounsc;
-	char*		out  = Tcl_GetThreadData(&outbuf, maxlen_output);
+	int				adj  = random() % adjectivesc;
+	int				noun = random() % nounsc;
+	Tcl_DString*	ds = Tcl_GetThreadData(&outbuf, sizeof(Tcl_DString));
 
-	snprintf(out, maxlen_output, "%s%s", adjectives[adj], nouns[noun]);
+	// DStringFree is safe to call with zero'ed *ds, and does a reset (re-init)
+	Tcl_DStringFree(ds);
 
-	return out;
+	Tcl_DStringAppend(ds, prefix, -1);
+	Tcl_DStringAppend(ds, adjectives[adj], -1);
+	Tcl_DStringAppend(ds, nouns[noun], -1);
+
+	return Tcl_DStringValue(ds);
 }
 
 
-void* thing(const char *const name)
+void* thing(const char* name)
 {
 	Tcl_HashEntry*		he = NULL;
 	struct thread_cx*	cx = Tcl_GetThreadData(&names_thread_cx, sizeof(struct thread_cx));
 
 	if (cx->hash_tables_initialized == 0) init(cx);
 
-	he = Tcl_FindHashEntry(&cx->things, name);
+	he = Tcl_FindHashEntry(&cx->names, name);
+	DBG("Looking up thing for name %s: %p\n", name, he);
+	if (he == NULL) {
+		Tcl_HashSearch	search;
+		Tcl_HashEntry*	he_walk = Tcl_FirstHashEntry(&cx->names, &search);
+
+		while (he_walk) {
+			DBG("entry into cx->things: %s\n", (const char*)Tcl_GetHashValue(he_walk));
+			he_walk = Tcl_NextHashEntry(&search);
+		}
+	}
 
 	if (unlikely(he == NULL)) return NULL;
 
@@ -390,7 +434,7 @@ void* thing(const char *const name)
 }
 
 
-const char* name(const void *const thing)
+const char* name(const char* prefix, const void* thing)
 {
 	struct thread_cx*	cx = Tcl_GetThreadData(&names_thread_cx, sizeof(struct thread_cx));
 	int					new;
@@ -411,7 +455,7 @@ const char* name(const void *const thing)
 
 	new = 0;
 	while (!new) {
-		candidate = randwords();
+		candidate = randwords(prefix);
 		he_name = Tcl_CreateHashEntry(&cx->names, candidate, &new);
 	}
 
@@ -421,11 +465,13 @@ const char* name(const void *const thing)
 	Tcl_SetHashValue(he_name, thing);
 	Tcl_SetHashValue(he_thing, chosen);
 
+	DBG("Allocated name %s for %p\n", chosen, thing);
+
 	return chosen;
 }
 
 
-void free_thing(const void *const thing)
+void free_thing(const void* thing)
 {
 	struct thread_cx*	cx = Tcl_GetThreadData(&names_thread_cx, sizeof(struct thread_cx));
 	Tcl_HashEntry*		he_thing = NULL;
@@ -447,6 +493,7 @@ void free_thing(const void *const thing)
 		if (he_name)
 			Tcl_DeleteHashEntry(he_name);
 
+		DBG("Freeing name %s (%p), he: %p\n", name, thing, he_name);
 		ckfree(name); name=NULL;
 		Tcl_DeleteHashEntry(he_thing);
 	}

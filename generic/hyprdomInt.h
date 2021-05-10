@@ -98,6 +98,7 @@ struct parse_context {
 	Tcl_Obj*			pi_node_name;
 };
 
+void breakpoint();
 
 void free_internal_rep_hyprdom_node(Tcl_Obj* obj);
 void update_string_rep_hyprdom_node(Tcl_Obj* obj);

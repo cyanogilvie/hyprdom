@@ -10,14 +10,37 @@ test new-1.0 {Construct a new DOM} -body { #<<<
 	set root
 } -cleanup {
 	unset -nocomplain root
-} -match regexp -result {^<deleted> 1 0}
+} -match regexp -result {^<deleted> 1 0$}
 #>>>
 test new-1.1 {Construct a new DOM} -body { #<<<
 	set root	[hyprdom new foo]
 } -cleanup {
 	hyprdom	free $root
 	unset -nocomplain root
-} -match regexp -result {^[A-Z][a-z]+[A-Z][a-z]+ 1 0}
+} -match regexp -result {^doc:[A-Z][a-z]+[A-Z][a-z]+ 1 0$}
+#>>>
+test new-2.1 {Construct a new DOM, gen node stringrep before doc is deleted} -body { #<<<
+	set root	[hyprdom new foo]
+	string length "$root "
+	list $root [hyprdom free $root]
+} -cleanup {
+	unset -nocomplain root
+} -match regexp -result {^{doc:[A-Z][a-z]+[A-Z][a-z]+ 1 0} {}$}
+#>>>
+test new-2.2 {Construct a new DOM, gen node stringrep after doc is deleted} -body { #<<<
+	set root	[hyprdom new foo]
+	list $root [hyprdom free $root]
+} -cleanup {
+	unset -nocomplain root
+} -match regexp -result {^{<deleted> 1 0} {}$}
+#>>>
+test new-2.3 {Construct a new DOM, shimmer node away from Hyprdom_node before using it to free the doc} -body { #<<<
+	set root	[hyprdom new foo]
+	llength $root	;# shimmer to list
+	list $root [hyprdom free $root]
+} -cleanup {
+	unset -nocomplain root
+} -match regexp -result {^{doc:[A-Z][a-z]+[A-Z][a-z]+ 1 0} {}$}
 #>>>
 
 ::tcltest::cleanupTests

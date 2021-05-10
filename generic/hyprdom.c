@@ -30,6 +30,8 @@ const char* type_names[] = {
 
 Tcl_ThreadDataKey thread_data_key;
 
+void breakpoint() {}
+
 Tcl_ObjType hyprdom_node = {
 	"Hyprdom_node",
 	free_internal_rep_hyprdom_node,
@@ -196,14 +198,26 @@ done:
 
 //>>>
 
+void free_thread_data(ClientData cdata) //<<<
+{
+	struct thread_data*	td = (struct thread_data*)cdata;
+
+	DBG("Cleaning up thread data for %s\n", name("td:", Tcl_GetCurrentThread()));
+	replace_tclobj(&td->name_valid, NULL);
+	td->initialized = 0;
+}
+
+//>>>
 struct thread_data* get_thread_data() //<<<
 {
 	struct thread_data*	res = NULL;
 	res = Tcl_GetThreadData(&thread_data_key, sizeof(struct thread_data));
 
 	if (!res->initialized) {
+		DBG("Initializing thread data for %s\n", name("td:", Tcl_GetCurrentThread()));
 		// TODO: Is it safe to share these regexp Tcl_Objs between interps in a thread?
 		replace_tclobj(&res->name_valid, Tcl_NewStringObj("^[" NAME_START_CHAR "][" NAME_START_CHAR NAME_CHAR "]*$", -1));
+		Tcl_CreateThreadExitHandler(free_thread_data, res);
 		res->initialized = 1;
 	}
 
@@ -234,16 +248,19 @@ int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const cha
 	Tcl_HashEntry*	he = NULL;
 	int				isnew=0, names_len;
 	uint32_t		id;
+	Tcl_Obj*		nameObj = NULL;
 
 	he = Tcl_CreateHashEntry(&doc->name_ids, name, &isnew);
 
 	if (isnew) {
 		struct thread_data*	td = get_thread_data();
-		int					valid;
-		size_t				tmp;
+		int			valid;
+		size_t		tmp;
+
+		replace_tclobj(&nameObj, Tcl_NewStringObj(name, -1));
 
 		// Verify that the name is valid for tag and attribute names
-		if (-1 == (valid = Tcl_RegExpMatchObj(interp, Tcl_NewStringObj(name, -1), td->name_valid))) {
+		if (-1 == (valid = Tcl_RegExpMatchObj(interp, nameObj, td->name_valid))) {
 			rc = TCL_ERROR;
 			goto done;
 		}
@@ -256,7 +273,7 @@ int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const cha
 
 		if (TCL_OK != (rc = Tcl_ListObjLength(interp, doc->names, &names_len)))
 			goto done;
-		if (TCL_OK != (rc = Tcl_ListObjAppendElement(interp, doc->names, Tcl_NewStringObj(name,-1))))
+		if (TCL_OK != (rc = Tcl_ListObjAppendElement(interp, doc->names, nameObj)))
 			goto done;
 		id = names_len;
 		tmp = id;
@@ -270,6 +287,8 @@ int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const cha
 	*name_id = id;
 
 done:
+	replace_tclobj(&nameObj, NULL);
+
 	if (he && isnew && rc != TCL_OK) {
 		// Partially allocated new entry, clean it up
 		Tcl_DeleteHashEntry(he);
@@ -307,7 +326,7 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 	}
 	memset(*doc, 0, sizeof(**doc));
 
-	replace_tclobj(&(*doc)->docname, Tcl_NewStringObj(name(*doc), -1));
+	replace_tclobj(&(*doc)->docname, Tcl_NewStringObj(name("doc:", *doc), -1));
 
 	if (initial_slots == 0) {
 		// Work out how many slots to allocate to fill a page with the initial doc struct
