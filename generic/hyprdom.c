@@ -15,7 +15,7 @@ int g_pagesize = 4096;		/* This will be updated to the real value in Hyprdom_Ini
 #define PI_NODE_NAME		"#pi"
 #define COMMENT_NODE_NAME	"#comment"
 
-#define NAME_START_CHAR	":A-Z_a-z\\xC0-\\xF6\\xF8-\\u02FF\\u0370-\\u0x37D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uxF900-\\uFDCF\\uFDF0-\\uFFFD\\u10000-\\uEFFFF"
+#define NAME_START_CHAR	":A-Z_a-z\\xC0-\\xF6\\xF8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD\\u10000-\\uEFFFF"
 #define NAME_CHAR		".0-9\\xB7\\u0300-\\u036F\\u203F-\\u2040-"
 
 const char* type_names[] = {
@@ -43,11 +43,11 @@ void free_internal_rep_hyprdom_node(Tcl_Obj* obj) //<<<
 	Tcl_ObjIntRep*	ir = Tcl_FetchIntRep(obj, &hyprdom_node);
 
 	if (ir) {
-		struct doc*		doc = (struct doc*)ir->twoPtrValue.ptr1;
-		free_doc(&doc);
+		struct node_slot*		slot_ref = (struct node_slot*)ir;
 
-		doc = NULL;
-		ir->twoPtrValue.ptr1 = NULL;
+		slot_ref->doc = NULL;
+		slot_ref->slot = 0;
+		slot_ref->epoch = 0;
 	}
 }
 
@@ -62,7 +62,11 @@ void update_string_rep_hyprdom_node(Tcl_Obj* obj) //<<<
 	// String rep for a hyprdom node is a 3 element list: docname slot_num epoch
 	Tcl_DStringInit(&ds);
 
-	Tcl_DStringAppendElement(&ds, Tcl_GetString(slot_ref->doc->docname));
+	if (slot_ref->doc) {
+		Tcl_DStringAppendElement(&ds, Tcl_GetString(slot_ref->doc->docname));
+	} else {
+		Tcl_DStringAppendElement(&ds, "<deleted>");
+	}
 	sprintf(numbuf, "%d", slot_ref->slot);
 	Tcl_DStringAppendElement(&ds, numbuf);
 	sprintf(numbuf, "%d", slot_ref->epoch);
@@ -294,6 +298,7 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 	int					rc = TCL_OK;
 	size_t				memsize;
 	int					alloc_rc;
+	int					i;
 
 	*doc = malloc(sizeof(**doc));
 	if (unlikely(doc == NULL)) {
@@ -315,6 +320,8 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 	if (unlikely(alloc_rc != 0)) goto alloc_failed;
 
 	memset((*doc)->nodes, 0, memsize);
+	for (i=0; i<initial_slots; i++)
+		(*doc)->nodes[i].doc = *doc;
 
 	Tcl_InitHashTable(&(*doc)->name_ids, TCL_STRING_KEYS);
 	replace_tclobj(&(*doc)->names, Tcl_NewListObj(0, NULL));
@@ -383,7 +390,7 @@ int get_node_slot(Tcl_Interp* interp /* can be NULL */, struct node* node, struc
 {
 	int				rc = TCL_OK;
 	struct doc*		doc = node->doc;
-	int				myslot = doc->nodes - node;
+	int				myslot = node - doc->nodes;
 
 	if (myslot > doc->nodelist_len) {
 		rc = TCL_ERROR;
@@ -393,7 +400,7 @@ int get_node_slot(Tcl_Interp* interp /* can be NULL */, struct node* node, struc
 	}
 
 	slot_ref->doc   = doc;
-	slot_ref->slot  = doc->nodes - node;
+	slot_ref->slot  = node - doc->nodes;
 	slot_ref->epoch = node->epoch;
 
 done:
@@ -580,6 +587,9 @@ void free_doc(struct doc** doc) //<<<
 
 	for (i=0; i < (*doc)->nodelist_len; i++)
 		DecrRefNode(&(*doc)->nodes[i]);
+
+	free((*doc)->nodes);
+	(*doc)->nodes = NULL;
 
 	free_thing(*doc);
 	replace_tclobj(&(*doc)->docname, NULL);
@@ -1470,6 +1480,11 @@ DLLEXPORT int Hyprdom_Init(Tcl_Interp* interp) //<<<
 {
 	int				rc = TCL_OK;
 	Tcl_Namespace*	ns = NULL;
+
+#ifdef USE_TCL_STUBS
+	if (Tcl_InitStubs(interp, "8.6", 0) == NULL)
+		return TCL_ERROR;
+#endif // USE_TCL_STUBS
 
 	g_pagesize = sysconf(_SC_PAGESIZE);
 

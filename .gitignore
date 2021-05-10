@@ -11,3 +11,4 @@ config.status
 configure
 pkgIndex.tcl
 doc/hyprdom.n
+tags

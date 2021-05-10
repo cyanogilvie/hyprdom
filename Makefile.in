@@ -260,7 +260,7 @@ gdb:
 
 gdb-test: binaries libraries
 	$(TCLSH_ENV) $(PKG_ENV) $(GDB) \
-	    --args $(TCLSH_PROG) `@CYGPATH@ $(srcdir)/tests/all.tcl` \
+	    --ex r --args $(TCLSH_PROG) `@CYGPATH@ $(srcdir)/tests/all.tcl` \
 	    $(TESTFLAGS) -singleproc 1 \
 	    -load "package ifneeded $(PACKAGE_NAME) $(PACKAGE_VERSION) \
 		[list load `@CYGPATH@ $(PKG_LIB_FILE)` [string totitle $(PACKAGE_NAME)]]"
@@ -455,8 +455,11 @@ uninstall-binaries:
 	  rm -f "$(DESTDIR)$(bindir)/$$p"; \
 	done
 
+tags:
+	ctags-exuberant --recurse=yes generic/*
+
 .PHONY: all binaries clean depend distclean doc install libraries test
-.PHONY: gdb gdb-test valgrind valgrindshell
+.PHONY: gdb gdb-test valgrind valgrindshell tags
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

@@ -1,8 +1,4 @@
-#include <tcl.h>
-#include "names.h"
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include "hyprdomInt.h"
 #include <time.h>
 
 static const char* adjectives[] = {
@@ -387,6 +383,8 @@ void* thing(const char *const name)
 	if (cx->hash_tables_initialized == 0) init(cx);
 
 	he = Tcl_FindHashEntry(&cx->things, name);
+
+	if (unlikely(he == NULL)) return NULL;
 
 	return Tcl_GetHashValue(he);
 }
