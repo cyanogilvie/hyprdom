@@ -8,14 +8,13 @@ proc readfile fn {
 	try {read $h} finally {close $h}
 }
 
-test parse-1.0 {Construct a new DOM from XML} -body { #<<<
+test asXML-1.0 {Serialize as XML} -body { #<<<
 	set root	[hyprdom parse [readfile xpath/xpath-grammar.xml]]
-	string length "$root "	;# Force a string rep
-	hyprdom free $root
-	set root
+	lindex [exec md5sum << [hyprdom asXML $root]] 0
 } -cleanup {
+	hyprdom free $root
 	unset -nocomplain root
-} -match regexp -result {^doc:[A-Z][a-z]+[A-Z][a-z]+ 1 0$}
+} -result bb3e518631b7a9bb3e767b608a2d6e13
 #>>>
 
 ::tcltest::cleanupTests

@@ -457,17 +457,32 @@ int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, str
 	struct node*	node = NULL;
 	struct node*	parent_node = NULL;
 
+	if (unlikely(parent->slot == 0)) {
+		Tcl_Obj*	name = NULL;
+		const char*	namestr = NULL;
+
+		rc = TCL_ERROR;
+		if (TCL_OK == Tcl_ListObjIndex(NULL, new->doc->names, new->doc->nodes[new->slot].name_id, &name)) {
+			namestr = Tcl_GetString(name);
+		} else {
+			namestr = "<error>";
+		}
+		Tcl_SetObjResult(interp, Tcl_ObjPrintf("Cannot attach %s node \"%s\" to the root",
+					type_names[new->doc->nodes[new->slot].type], namestr));
+		goto done;
+	}
+
 	if (TCL_OK != (rc = GetNodeFromSlotRef(interp, new,    &node       ))) goto done;
 	if (TCL_OK != (rc = GetNodeFromSlotRef(interp, parent, &parent_node))) goto done;
 
-	if (node->doc != parent_node->doc) {
+	if (unlikely(node->doc != parent_node->doc)) {
 		rc = TCL_ERROR;
 		if (interp)
 			Tcl_SetObjResult(interp, Tcl_ObjPrintf("node does not belong to the same document as parent"));
 		goto done;
 	}
 
-	if (parent_node->type != ELEMENT) {
+	if (unlikely(parent_node->type != ELEMENT)) {
 		rc = TCL_ERROR;
 		if (interp) {
 			if (parent_node->type >= NODE_TYPE_END) {
@@ -481,21 +496,21 @@ int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, str
 		goto done;
 	}
 
-	if (node->type >= NODE_TYPE_END) {
+	if (unlikely(node->type >= NODE_TYPE_END)) {
 		rc = TCL_ERROR;
 		if (interp)
 			Tcl_SetObjResult(interp, Tcl_ObjPrintf("Invalid node type %d, memory corruption?", node->type));
 		goto done;
 	}
 
-	if (before == NULL) { // Append to children
+	if (likely(before == NULL)) { // Append to children
 		uint32_t		tail;
 
-		if (node->parent) detach_node(node);
+		if (unlikely(node->parent)) detach_node(node);
 
 		tail = parent_node->last_child;
 
-		if (tail) {
+		if (likely(tail)) {
 			parent_node->doc->nodes[tail].next_sibling = myslot;
 			node->prior_sibling = tail;
 		} else {
@@ -506,6 +521,7 @@ int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, str
 
 		node->next_sibling = 0;
 		parent_node->last_child = myslot;
+		node->parent = parent->slot;
 	} else {
 		struct node*	before_node = NULL;
 
@@ -528,7 +544,7 @@ int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, str
 		if (node->parent) detach_node(node);
 		node->next_sibling  = before->slot;
 		node->prior_sibling = before_node->prior_sibling;
-		node->parent        = before_node->parent;
+		node->parent        = parent->slot;
 		before_node->prior_sibling = myslot;
 		if (parent_node->first_child == before->slot)
 			parent_node->first_child = myslot;
@@ -746,8 +762,12 @@ static void pcb_start_element(void* userData, const XML_Char* name, const XML_Ch
 	}
 
 	if (likely(pc->cx.slot != 0)) {
+		//DBG("Attaching to parent %d\n", pc->cx.slot);
 		if (TCL_OK != (pc->rc = attach_node(pc->interp, &myslot, &pc->cx, NULL))) goto err;
+	} else {
+		//DBG("no parent %d\n", pc->cx.slot);
 	}
+	//DBG("Pushing pc->cx.slot to current element: %d -> %d (my parent: %d)\n", pc->cx.slot, myslot.slot, node->parent);
 	pc->cx.slot = myslot.slot;
 
 	return;
@@ -773,6 +793,7 @@ static void pcb_end_element(void* userData, const XML_Char* name) //<<<
 	struct node*			node = &pc->cx.doc->nodes[pc->cx.slot];
 
 	//DBG("pcb_end_element: (%s)\n", name);
+	//DBG("Popping pc->cx.slot to parent: %d <- %d\n", node->parent, pc->cx.slot);
 	pc->cx.slot = node->parent;
 }
 
@@ -861,7 +882,7 @@ void pcb_comment(void* userData, const XML_Char* data) //<<<
 	uint32_t				name_id;
 
 	//DBG("pcb_comment: %s\n", data);
-	if (unlikely(pc->cx.doc == NULL)) return;
+	if (unlikely(pc->cx.doc == NULL || pc->cx.slot == 0)) return;
 
 	node = new_node(pc->cx.doc, &myslot);
 	node->type = COMMENT;
@@ -907,6 +928,7 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 		}
 	};
 
+	TIME("parse_cmd", 
 	CHECK_ARGS(1, "xml");
 
 	//DBG("parse_cmd\n");
@@ -957,6 +979,7 @@ done:
 	replace_tclobj(&pc.pi_node_name, NULL);
 	pc.cx.doc = NULL;
 	pc.interp = NULL;
+	);
 	return pc.rc;
 }
 
@@ -970,6 +993,14 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 	struct node*	node = &nodes[slot];
 	const char*		data = NULL;
 	int				datalen;
+
+	/*
+	{
+		Tcl_Obj* nodenameobj = NULL;
+		Tcl_ListObjIndex(interp, doc->names, node->name_id, &nodenameobj);
+		DBG("--> serialize_node_as_xml: %s <%s>\n", type_names[node->type], Tcl_GetString(nodenameobj));
+	}
+	*/
 
 	switch (node->type) {
 		case ELEMENT:
@@ -1001,7 +1032,7 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 						s = Tcl_GetStringFromObj(names[child_node->name_id], &slen);
 						// All entries in names[] should have been checked at creation time
 						Tcl_DStringAppend(xml, s, slen);
-						Tcl_DStringAppend(xml, "=\"", 1);
+						Tcl_DStringAppend(xml, "=\"", 2);
 						s = Tcl_GetStringFromObj(child_node->value, &slen);
 						{
 							const char*			start = s;
@@ -1013,23 +1044,26 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 
 								// Any byte higher than this we output verbatim, so avoid all the
 								// tests below for the common case (letters)
-								if (likely(c > 0x3c)) continue;
+								if (likely(c > 0x3c)) {
+									p++;
+									continue;
+								}
 
 								switch (c) {
 									case '<':
 										if (likely(p > start)) Tcl_DStringAppend(xml, start, p-start);
-										start = p;
+										start = p+1;
 										Tcl_DStringAppend(xml, "&lt;", 4);
 										break;
 									case '&':
 										if (likely(p > start)) Tcl_DStringAppend(xml, start, p-start);
-										start = p;
-										Tcl_DStringAppend(xml, "&amp;", 4);
+										start = p+1;
+										Tcl_DStringAppend(xml, "&amp;", 5);
 										break;
 									case '"':
 										if (likely(p > start)) Tcl_DStringAppend(xml, start, p-start);
-										start = p;
-										Tcl_DStringAppend(xml, "&quot;", 4);
+										start = p+1;
+										Tcl_DStringAppend(xml, "&quot;", 6);
 										break;
 									case 0x09:
 									case 0x0A:
@@ -1071,7 +1105,6 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 					Tcl_DStringAppend(xml, tagstr, taglen);
 					Tcl_DStringAppend(xml, ">", 1);
 				}
-
 			}
 			break;
 		case TEXT:
@@ -1088,18 +1121,21 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 
 					// Any byte higher than this we output verbatim, so avoid all the
 					// tests below for the common case (letters)
-					if (likely(c > 0x3c)) continue;
+					if (likely(c > 0x3c)) {
+						p++;
+						continue;
+					}
 
 					switch (c) {
 						case '<':
 							if (likely(p > start)) Tcl_DStringAppend(xml, start, p-start);
-							start = p;
+							start = p+1;
 							Tcl_DStringAppend(xml, "&lt;", 4);
 							break;
 						case '&':
 							if (likely(p > start)) Tcl_DStringAppend(xml, start, p-start);
-							start = p;
-							Tcl_DStringAppend(xml, "&amp;", 4);
+							start = p+1;
+							Tcl_DStringAppend(xml, "&amp;", 5);
 							break;
 						case 0x09:
 						case 0x0A:
@@ -1155,6 +1191,13 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 	}
 
 done:
+	/*
+	{
+		Tcl_Obj* nodenameobj = NULL;
+		Tcl_ListObjIndex(interp, doc->names, node->name_id, &nodenameobj);
+		DBG("<-- serialize_node_as_xml: %s </%s>, rc: %d\n", type_names[node->type], Tcl_GetString(nodenameobj), rc);
+	}
+	*/
 	return rc;
 }
 
@@ -1169,6 +1212,7 @@ static int asXML_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 
 	if (TCL_OK != (rc = Hyprdom_GetNodeSlotFromObj(interp, objv[1], &myslot))) goto done;
 
+	TIME("serialize",
 	Tcl_DStringInit(&xml);
 
 	if (TCL_OK != (rc = serialize_node_as_xml(interp, &xml, myslot->doc, myslot->slot))) goto done;
@@ -1177,6 +1221,7 @@ static int asXML_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 
 done:
 	Tcl_DStringFree(&xml);
+	);
 	return rc;
 }
 
