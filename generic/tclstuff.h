@@ -5,6 +5,14 @@
 
 #include "tcl.h"
 
+#ifdef __builtin_expect
+#	define likely(exp)		__builtin_expect(!!(exp), 1)
+#	define unlikely(exp)	__builtin_expect(!!(exp), 0)
+#else
+#	define likely(exp)		(exp)
+#	define unlikely(exp)	(exp)
+#endif
+
 #define NEW_CMD( tcl_cmd, c_cmd ) \
 	Tcl_CreateObjCommand( interp, tcl_cmd, \
 			(Tcl_ObjCmdProc *) c_cmd, \
@@ -44,15 +52,15 @@
 
 // A rather frivolous macro that just enhances readability for a common case
 #define TEST_OK( cmd )		\
-	if (cmd != TCL_OK) return TCL_ERROR;
+	if (unlikely(cmd != TCL_OK)) return TCL_ERROR;
 
 #define TEST_OK_LABEL( label, var, cmd )		\
-	if (cmd != TCL_OK) { \
+	if (unlikely(cmd != TCL_OK)) { \
 		var = TCL_ERROR; \
 		goto label; \
 	}
 
-#define TEST_OK_BREAK(var, cmd) if (TCL_OK != (var=(cmd))) break;
+#define TEST_OK_BREAK(var, cmd) if (unlikely(TCL_OK != (var=(cmd)))) break;
 
 static inline void release_tclobj(Tcl_Obj** obj)
 {

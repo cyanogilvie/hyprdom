@@ -95,8 +95,7 @@ int Hyprdom_GetNodeSlotFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct node_slo
 		int					oc;
 		int					tmp;
 
-		if (TCL_OK != (rc = Tcl_ListObjGetElements(interp, obj, &oc, &ov)))
-			goto done;
+		TEST_OK_LABEL(done, rc, Tcl_ListObjGetElements(interp, obj, &oc, &ov));
 
 		if (oc != 3) {
 			rc = TCL_ERROR;
@@ -105,16 +104,13 @@ int Hyprdom_GetNodeSlotFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct node_slo
 			goto done;
 		}
 
-		if (TCL_OK != (rc = Hyprdom_GetDocByName(interp, Tcl_GetString(ov[0]), &new_slot_ref.doc)))
-			goto done;
+		TEST_OK_LABEL(done, rc, Hyprdom_GetDocByName(interp, Tcl_GetString(ov[0]), &new_slot_ref.doc));
 
-		if (TCL_OK != (rc = Tcl_GetIntFromObj(interp, ov[1], &tmp)))
-			goto done;
+		TEST_OK_LABEL(done, rc, Tcl_GetIntFromObj(interp, ov[1], &tmp));
 
 		new_slot_ref.slot = tmp;
 
-		if (TCL_OK != (rc = Tcl_GetIntFromObj(interp, ov[2], &tmp)))
-			goto done;
+		TEST_OK_LABEL(done, rc, Tcl_GetIntFromObj(interp, ov[2], &tmp));
 
 		new_slot_ref.epoch = tmp;
 
@@ -171,7 +167,7 @@ int Hyprdom_GetNameFromObj(Tcl_Interp* interp, struct doc* doc, Tcl_Obj* obj, ui
 		Tcl_ObjIntRep	newir;
 		uint32_t		id;
 
-		if (TCL_OK != (rc = get_name_id(interp, doc, name, &id))) goto done;
+		TEST_OK_LABEL(done, rc, get_name_id(interp, doc, name, &id));
 
 		newir.ptrAndLongRep.ptr = doc;
 		newir.ptrAndLongRep.value = id;
@@ -184,7 +180,7 @@ int Hyprdom_GetNameFromObj(Tcl_Interp* interp, struct doc* doc, Tcl_Obj* obj, ui
 		uint32_t	id;
 
 		// Name reference is stale, refers to a different doc
-		if (TCL_OK != (rc = get_name_id(interp, doc, name, &id))) goto done;
+		TEST_OK_LABEL(done, rc, get_name_id(interp, doc, name, &id));
 
 		ir->ptrAndLongRep.ptr = doc;
 		ir->ptrAndLongRep.value = id;
@@ -271,10 +267,8 @@ int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const cha
 			goto done;
 		}
 
-		if (TCL_OK != (rc = Tcl_ListObjLength(interp, doc->names, &names_len)))
-			goto done;
-		if (TCL_OK != (rc = Tcl_ListObjAppendElement(interp, doc->names, nameObj)))
-			goto done;
+		TEST_OK_LABEL(done, rc, Tcl_ListObjLength(interp, doc->names, &names_len));
+		TEST_OK_LABEL(done, rc, Tcl_ListObjAppendElement(interp, doc->names, nameObj));
 		id = names_len;
 		tmp = id;
 		Tcl_SetHashValue(he, UINT2PTR(tmp));
@@ -303,7 +297,7 @@ int set_node_name(Tcl_Interp* interp /* may be NULL */, struct node* node, const
 	int				rc = TCL_OK;
 	uint32_t		id;
 
-	if (TCL_OK != (rc = get_name_id(interp, node->doc, name, &id))) goto done;
+	TEST_OK_LABEL(done, rc, get_name_id(interp, node->doc, name, &id));
 
 	node->name_id = id;
 
@@ -348,7 +342,7 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 
 	(*doc)->nodelist_len = initial_slots;
 	(*doc)->root = 1;				// slot number 0 is reserved to mean NULL
-	if (TCL_OK != (rc = set_node_name(interp, &(*doc)->nodes[(*doc)->root], root_name))) goto done;
+	TEST_OK_LABEL(done, rc, set_node_name(interp, &(*doc)->nodes[(*doc)->root], root_name));
 	(*doc)->slot_next = 2;
 #if DEDUP
 	(*doc)->dedup_pool = new_dedup_pool(interp);
@@ -383,7 +377,7 @@ int check_node_slot(Tcl_Interp* interp /* can be NULL */, struct node_slot* slot
 	struct doc*		doc = slot_ref->doc;
 	struct node*	node = &doc->nodes[slot_ref->slot];	// May not be safe to dereference yet
 
-	if (slot_ref->slot >= doc->nodelist_len) {
+	if (unlikely(slot_ref->slot >= doc->nodelist_len)) {
 		// off the end of the allocated node slots
 		rc = TCL_ERROR;
 		if (interp)
@@ -393,7 +387,7 @@ int check_node_slot(Tcl_Interp* interp /* can be NULL */, struct node_slot* slot
 
 	// node is now safe to dereference
 
-	if (node->epoch != slot_ref->epoch) {
+	if (unlikely(node->epoch != slot_ref->epoch)) {
 		// the before node reference is stale (refers to a deleted node)
 		rc = TCL_ERROR;
 		if (interp)
@@ -433,7 +427,7 @@ int GetNodeFromSlotRef(Tcl_Interp* interp /* can be NULL */, struct node_slot* s
 	int				rc = TCL_OK;
 	struct node*	tmp = NULL;
 
-	if (TCL_OK != (rc = check_node_slot(interp, slot_ref))) goto done;
+	TEST_OK_LABEL(done, rc, check_node_slot(interp, slot_ref));
 
 	tmp = &slot_ref->doc->nodes[slot_ref->slot];
 
@@ -457,24 +451,27 @@ int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, str
 	const int		myslot = new->slot;
 	struct node*	node = NULL;
 	struct node*	parent_node = NULL;
+	struct node*	nodes = parent->doc->nodes;
 
 	if (unlikely(parent->slot == 0)) {
 		Tcl_Obj*	name = NULL;
 		const char*	namestr = NULL;
 
 		rc = TCL_ERROR;
-		if (TCL_OK == Tcl_ListObjIndex(NULL, new->doc->names, new->doc->nodes[new->slot].name_id, &name)) {
+		if (TCL_OK == Tcl_ListObjIndex(NULL, new->doc->names, nodes[new->slot].name_id, &name)) {
 			namestr = Tcl_GetString(name);
 		} else {
 			namestr = "<error>";
 		}
 		Tcl_SetObjResult(interp, Tcl_ObjPrintf("Cannot attach %s node \"%s\" to the root",
-					type_names[new->doc->nodes[new->slot].type], namestr));
+					type_names[nodes[new->slot].type], namestr));
 		goto done;
 	}
 
-	if (TCL_OK != (rc = GetNodeFromSlotRef(interp, new,    &node       ))) goto done;
-	if (TCL_OK != (rc = GetNodeFromSlotRef(interp, parent, &parent_node))) goto done;
+	//TEST_OK_LABEL(done, rc, GetNodeFromSlotRef(interp, new,    &node       ));
+	//TEST_OK_LABEL(done, rc, GetNodeFromSlotRef(interp, parent, &parent_node));
+	node = &nodes[new->slot];
+	parent_node = &nodes[parent->slot];
 
 	if (unlikely(node->doc != parent_node->doc)) {
 		rc = TCL_ERROR;
@@ -524,9 +521,10 @@ int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, str
 		parent_node->last_child = myslot;
 		node->parent = parent->slot;
 	} else {
-		struct node*	before_node = NULL;
+		//struct node*	before_node = NULL;
+		//TEST_OK_LABEL(done, rc, GetNodeFromSlotRef(interp, before, &before_node));
 
-		if (TCL_OK != (rc = GetNodeFromSlotRef(interp, before, &before_node))) goto done;
+		struct node*	before_node = &nodes[before->slot];
 
 		if (before_node->doc != parent->doc) {
 			rc = TCL_ERROR;
@@ -581,10 +579,11 @@ void free_node(struct node* node) //<<<
 	detach_node(node);
 
 	childslot = node->first_child;
-	while (childslot) {
+	while (likely(childslot)) {
 		struct node*	child = &nodes[childslot];
 		childslot = child->next_sibling;
-		DecrRefNode(child);
+		//DecrRefNode(child);
+		free_node(child);
 	}
 	node->first_child = 0;
 	node->last_child = 0;
@@ -689,7 +688,7 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 	slot_ref->doc = doc;
 	slot_ref->slot = i;
 	slot_ref->epoch = new->epoch;
-	doc->slot_next = i;
+	doc->slot_next = i+1;
 
 	return new;
 
@@ -707,8 +706,8 @@ static int new_doc_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *
 
 	CHECK_ARGS(1, "rootname");
 
-	if (TCL_OK != (rc = new_doc(interp, 0, Tcl_GetString(objv[1]), &doc))) goto done;
-	if (TCL_OK != (rc = get_node_slot(interp, &doc->nodes[doc->root], &slot_ref)))      goto done;
+	TEST_OK_LABEL(done, rc, new_doc(interp, 0, Tcl_GetString(objv[1]), &doc));
+	TEST_OK_LABEL(done, rc, get_node_slot(interp, &doc->nodes[doc->root], &slot_ref));
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&slot_ref));
 
 done:
@@ -723,7 +722,7 @@ static int free_doc_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj 
 
 	CHECK_ARGS(1, "node");
 
-	if (TCL_OK != (rc = Hyprdom_GetNodeSlotFromObj(interp, objv[1], &node_slot))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNodeSlotFromObj(interp, objv[1], &node_slot));
 	free_doc(&node_slot->doc);
 
 done:
@@ -744,13 +743,13 @@ static void pcb_start_element(void* userData, const XML_Char* name, const XML_Ch
 	//DBG("pcb_start_element: (%s)\n", name);
 	if (unlikely(pc->cx.doc == NULL)) {
 		// First element: create the doc and make this the root
-		if (TCL_OK != (pc->rc = new_doc(pc->interp, pc->slots_estimate, name, &pc->cx.doc))) goto err;
+		TEST_OK_LABEL(err, pc->rc, new_doc(pc->interp, pc->slots_estimate, name, &pc->cx.doc));
 		node = &pc->cx.doc->nodes[pc->cx.doc->root];
 		//DBG("Created new doc %s with root %s\n", Tcl_GetString(pc->cx.doc->docname), name);
-		if (TCL_OK != (pc->rc = get_node_slot(pc->interp, node, &myslot))) goto err;
+		TEST_OK_LABEL(err, pc->rc, get_node_slot(pc->interp, node, &myslot));
 	} else {
 		node = new_node(pc->cx.doc, &myslot);
-		if (TCL_OK != (pc->rc = set_node_name(pc->interp, node, name))) goto err;
+		TEST_OK_LABEL(err, pc->rc, set_node_name(pc->interp, node, name));
 	}
 
 	while (*attrib) {
@@ -760,16 +759,16 @@ static void pcb_start_element(void* userData, const XML_Char* name, const XML_Ch
 
 		attrnode = new_node(pc->cx.doc, &attrslot);
 		attrnode->type = ATTRIBUTE;
-		if (TCL_OK != (pc->rc = set_node_name(pc->interp, attrnode, attrname))) goto err;
+		TEST_OK_LABEL(err, pc->rc, set_node_name(pc->interp, attrnode, attrname));
 		replace_tclobj(&attrnode->value, get_string(pc->cx.doc->dedup_pool, attrvalue, -1));
 
-		if (TCL_OK != (pc->rc = attach_node(pc->interp, &attrslot, &myslot, NULL))) goto err;
+		TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &attrslot, &myslot, NULL));
 		attrnode = NULL;
 	}
 
 	if (likely(pc->cx.slot != 0)) {
 		//DBG("Attaching to parent %d\n", pc->cx.slot);
-		if (TCL_OK != (pc->rc = attach_node(pc->interp, &myslot, &pc->cx, NULL))) goto err;
+		TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
 	} else {
 		//DBG("no parent %d\n", pc->cx.slot);
 	}
@@ -819,10 +818,9 @@ void pcb_text(void* userData, const XML_Char* s, int len) //<<<
 	if (pc->text_node_name == NULL)
 		replace_tclobj(&pc->text_node_name, Tcl_NewStringObj(TEXT_NODE_NAME, -1));
 
-	if (TCL_OK != (pc->rc = Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->text_node_name, &name_id)))
-		goto err;
+	TEST_OK_LABEL(err, pc->rc, Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->text_node_name, &name_id));
 	node->name_id = name_id;
-	if (TCL_OK != (pc->rc = attach_node(pc->interp, &myslot, &pc->cx, NULL))) goto err;
+	TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
 
 	return;
 
@@ -857,10 +855,9 @@ void pcb_pi(void* userData, const XML_Char* target, const XML_Char* data) //<<<
 	if (pc->pi_node_name == NULL)
 		replace_tclobj(&pc->pi_node_name, Tcl_NewStringObj(PI_NODE_NAME, -1));
 
-	if (TCL_OK != (pc->rc = Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->pi_node_name, &name_id)))
-		goto err;
+	TEST_OK_LABEL(err, pc->rc, Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->pi_node_name, &name_id));
 	node->name_id = name_id;
-	if (TCL_OK != (pc->rc = attach_node(pc->interp, &myslot, &pc->cx, NULL))) goto err;
+	TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
 
 	goto done;
 
@@ -897,10 +894,9 @@ void pcb_comment(void* userData, const XML_Char* data) //<<<
 	if (pc->comment_node_name == NULL)
 		replace_tclobj(&pc->comment_node_name, Tcl_NewStringObj(COMMENT_NODE_NAME, -1));
 
-	if (TCL_OK != (pc->rc = Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->comment_node_name, &name_id)))
-		goto err;
+	TEST_OK_LABEL(err, pc->rc, Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->comment_node_name, &name_id));
 	node->name_id = name_id;
-	if (TCL_OK != (pc->rc = attach_node(pc->interp, &myslot, &pc->cx, NULL))) goto err;
+	TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
 
 	return;
 
@@ -974,7 +970,7 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 			Tcl_SetObjResult(interp, Tcl_ObjPrintf("No document created by parse"));
 			goto done;
 		}
-		if (TCL_OK != (pc.rc = get_node_slot(interp, &pc.cx.doc->nodes[pc.cx.doc->root], &root_slot))) goto done;
+		TEST_OK_LABEL(done, pc.rc, get_node_slot(interp, &pc.cx.doc->nodes[pc.cx.doc->root], &root_slot));
 		Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&root_slot));
 	}
 
@@ -1021,8 +1017,7 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 				Tcl_Obj**	names = NULL;
 				int			namesc;
 
-				if (TCL_OK != (rc = Tcl_ListObjGetElements(interp, doc->names, &namesc, &names)))
-					goto done;
+				TEST_OK_LABEL(done, rc, Tcl_ListObjGetElements(interp, doc->names, &namesc, &names));
 
 				tagstr = Tcl_GetStringFromObj(names[node->name_id], &taglen);
 
@@ -1106,7 +1101,7 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 					while (child) {
 						struct node*	child_node = &nodes[child];
 						if (child_node->type != ATTRIBUTE)
-							if (TCL_OK != (rc = serialize_node_as_xml(interp, xml, doc, child))) goto done;
+							TEST_OK_LABEL(done, rc, serialize_node_as_xml(interp, xml, doc, child));
 						child = child_node->next_sibling;
 					}
 
@@ -1176,7 +1171,7 @@ static int serialize_node_as_xml(Tcl_Interp* interp /* may be NULL */, Tcl_DStri
 				Tcl_Obj**	ov = NULL;
 				int			oc;
 
-				if (TCL_OK != (rc = Tcl_ListObjGetElements(interp, node->value, &oc, &ov))) goto done;
+				TEST_OK_LABEL(done, rc, Tcl_ListObjGetElements(interp, node->value, &oc, &ov));
 				Tcl_DStringAppend(xml, "<?", 4);
 				// TODO: filter invalid C0 chars
 				data = Tcl_GetStringFromObj(ov[0], &datalen);
@@ -1219,12 +1214,12 @@ static int asXML_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 
 	CHECK_ARGS(1, "node");
 
-	if (TCL_OK != (rc = Hyprdom_GetNodeSlotFromObj(interp, objv[1], &myslot))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNodeSlotFromObj(interp, objv[1], &myslot));
 
 	TIME("serialize",
 	Tcl_DStringInit(&xml);
 
-	if (TCL_OK != (rc = serialize_node_as_xml(interp, &xml, myslot->doc, myslot->slot))) goto done;
+	TEST_OK_LABEL(done, rc, serialize_node_as_xml(interp, &xml, myslot->doc, myslot->slot));
 
 	Tcl_DStringResult(interp, &xml);
 
@@ -1260,11 +1255,11 @@ static int autonode_tag_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_
 		goto done;
 	}
 
-	if (TCL_OK != (rc = Hyprdom_GetNameFromObj(interp, parent->doc, tagname, &name_id))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNameFromObj(interp, parent->doc, tagname, &name_id));
 
 	node = new_node(parent->doc, &myslot);
 	node->name_id = name_id;
-	if (TCL_OK != (rc = attach_node(interp, &myslot, parent, NULL))) goto done;
+	TEST_OK_LABEL(done, rc, attach_node(interp, &myslot, parent, NULL));
 
 	attribc = (objc-1) / 2;
 	for (i=1; i<attribc*2; i+=2) {
@@ -1274,13 +1269,12 @@ static int autonode_tag_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_
 		struct node*		attrib_node = NULL;
 		struct node_slot	attrib_slot;
 
-		if (TCL_OK != (rc = Hyprdom_GetNameFromObj(interp, parent->doc, attrib_name, &attrib_name_id)))
-			goto done;
+		TEST_OK_LABEL(done, rc, Hyprdom_GetNameFromObj(interp, parent->doc, attrib_name, &attrib_name_id));
 
 		attrib_node = new_node(parent->doc, &attrib_slot);
 		attrib_node->name_id = attrib_name_id;
 		replace_tclobj(&attrib_node->value, attrib_value);
-		if (TCL_OK != (rc = attach_node(interp, &attrib_slot, &myslot, NULL))) goto done;
+		TEST_OK_LABEL(done, rc, attach_node(interp, &attrib_slot, &myslot, NULL));
 	}
 
 	hold_slot = Tcl_GetAssocData(interp, "hyprdom_current_node", NULL);
@@ -1289,7 +1283,7 @@ static int autonode_tag_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_
 	if (i < objc) {
 		// A script arg remains
 		// TODO: implement as NR command
-		if (TCL_OK != (rc = Tcl_EvalObjEx(interp, objv[objc-1], 0))) goto done;
+		TEST_OK_LABEL(done, rc, Tcl_EvalObjEx(interp, objv[objc-1], 0));
 	}
 
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&myslot));
@@ -1316,13 +1310,13 @@ static int autonode_entity_cmd(ClientData cdata, Tcl_Interp* interp, int objc, T
 		goto done;
 	}
 
-	if (TCL_OK != (rc = Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id));
 
 	node = new_node(parent->doc, &myslot);
 	node->type = TEXT;
-	if (TCL_OK != (rc = set_node_name(interp, node, TEXT_NODE_NAME))) goto done;
+	TEST_OK_LABEL(done, rc, set_node_name(interp, node, TEXT_NODE_NAME));
 	replace_tclobj(&node->value, entity);
-	if (TCL_OK != (rc = attach_node(interp, &myslot, parent, NULL))) goto done;
+	TEST_OK_LABEL(done, rc, attach_node(interp, &myslot, parent, NULL));
 
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&myslot));
 
@@ -1347,13 +1341,13 @@ static int autonode_txt_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_
 		goto done;
 	}
 
-	if (TCL_OK != (rc = Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id));
 
 	node = new_node(parent->doc, &myslot);
 	node->type = TEXT;
-	if (TCL_OK != (rc = set_node_name(interp, node, TEXT_NODE_NAME))) goto done;
+	TEST_OK_LABEL(done, rc, set_node_name(interp, node, TEXT_NODE_NAME));
 	replace_tclobj(&node->value, objv[1]);
-	if (TCL_OK != (rc = attach_node(interp, &myslot, parent, NULL))) goto done;
+	TEST_OK_LABEL(done, rc, attach_node(interp, &myslot, parent, NULL));
 
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&myslot));
 
@@ -1395,13 +1389,13 @@ static int autonode_comment_cmd(ClientData cdata, Tcl_Interp* interp, int objc, 
 		goto done;
 	}
 
-	if (TCL_OK != (rc = Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id));
 
 	node = new_node(parent->doc, &myslot);
 	node->type = COMMENT;
-	if (TCL_OK != (rc = set_node_name(interp, node, TEXT_NODE_NAME))) goto done;
+	TEST_OK_LABEL(done, rc, set_node_name(interp, node, TEXT_NODE_NAME));
 	replace_tclobj(&node->value, objv[1]);
-	if (TCL_OK != (rc = attach_node(interp, &myslot, parent, NULL))) goto done;
+	TEST_OK_LABEL(done, rc, attach_node(interp, &myslot, parent, NULL));
 
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&myslot));
 
@@ -1426,13 +1420,13 @@ static int autonode_pi_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_O
 		goto done;
 	}
 
-	if (TCL_OK != (rc = Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNameFromObj(interp, parent->doc, (Tcl_Obj*)cdata, &name_id));
 
 	node = new_node(parent->doc, &myslot);
 	node->type = PI;
-	if (TCL_OK != (rc = set_node_name(interp, node, PI_NODE_NAME))) goto done;
+	TEST_OK_LABEL(done, rc, set_node_name(interp, node, PI_NODE_NAME));
 	replace_tclobj(&node->value, Tcl_NewListObj(objc-1, objv+1));
-	if (TCL_OK != (rc = attach_node(interp, &myslot, parent, NULL))) goto done;
+	TEST_OK_LABEL(done, rc, attach_node(interp, &myslot, parent, NULL));
 
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&myslot));
 
@@ -1536,14 +1530,14 @@ static int add_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *cons
 	CHECK_ARGS(2, "node script");
 
 	replace_tclobj(&cxnode, objv[1]);	// Take an additional ref to this so that the intrep we borrow doesn't go away before we're done with it
-	if (TCL_OK != (rc = Hyprdom_GetNodeSlotFromObj(interp, objv[1], &node_slot))) goto done;
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNodeSlotFromObj(interp, objv[1], &node_slot));
 	replace_tclobj(&script, objv[2]);
 
 	hold_slot = Tcl_GetAssocData(interp, "hyprdom_current_node", NULL);
 	Tcl_SetAssocData(interp, "hyprdom_current_node", NULL, node_slot);
 
 	// TODO: implement as NR command
-	if (TCL_OK != (rc = Tcl_EvalObjEx(interp, objv[objc-1], 0))) goto done;
+	TEST_OK_LABEL(done, rc, Tcl_EvalObjEx(interp, objv[objc-1], 0));
 
 done:
 	if (hold_slot) {
@@ -1604,7 +1598,7 @@ DLLEXPORT int Hyprdom_Init(Tcl_Interp* interp) //<<<
 #define NS "::hyprdom"
 
 	ns = Tcl_CreateNamespace(interp, NS, NULL, NULL);
-	if (TCL_OK != (rc = Tcl_Export(interp, ns, "*", 0))) goto done;
+	TEST_OK_LABEL(done, rc, Tcl_Export(interp, ns, "*", 0));
 	Tcl_CreateEnsemble(interp, NS, ns, 0);
 
 	Tcl_CreateObjCommand(interp, NS "::new",				new_doc_cmd,			NULL, NULL);
@@ -1615,8 +1609,7 @@ DLLEXPORT int Hyprdom_Init(Tcl_Interp* interp) //<<<
 	Tcl_CreateObjCommand(interp, NS "::add",				add_cmd,				NULL, NULL);
 	Tcl_CreateObjCommand(interp, NS "::current_node",		current_node_cmd,		NULL, NULL);
 
-	if (TCL_OK != (rc = Tcl_PkgProvide(interp, PACKAGE_NAME, PACKAGE_VERSION)))
-		goto done;
+	TEST_OK_LABEL(done, rc, Tcl_PkgProvide(interp, PACKAGE_NAME, PACKAGE_VERSION));
 
 done:
 	return rc;

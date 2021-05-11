@@ -13,14 +13,6 @@
 #include "tip445.h"
 #include "names.h"
 
-#ifdef __builtin_expect
-#	define likely(exp)		__builtin_expect(!!(exp), 1)
-#	define unlikely(exp)	__builtin_expect(!!(exp), 0)
-#else
-#	define likely(exp)		(exp)
-#	define unlikely(exp)	(exp)
-#endif
-
 // Taken from tclInt.h:
 #if !defined(INT2PTR) && !defined(PTR2INT)
 #   define INT2PTR(p) ((void *)(intptr_t)(p))
@@ -57,8 +49,8 @@ struct doc {
 
 
 struct node {
-	enum node_type	type;
 	struct doc*		doc;
+	Tcl_Obj*		value;		// ATTRIBUTE: attribute value, TEXT: text value
 	int32_t			refcount;	// <= 0 for deleted nodes
 	uint32_t		epoch;		// 0 initially for all nodes, when a node slot is freed and later reassigned, this is incremented
 	uint32_t		parent;
@@ -67,8 +59,8 @@ struct node {
 	uint32_t		prior_sibling;
 	uint32_t		next_sibling;
 	uint32_t		name_id;
-	Tcl_Obj*		value;		// ATTRIBUTE: attribute value
-								// TEXT: text value
+	enum node_type	type;
+	void*			padding;	// Pad struct node out to 64 bytes (2**6)
 };
 
 
