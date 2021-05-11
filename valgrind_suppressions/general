@@ -1,0 +1,118 @@
+{
+   GeneralCreateLiteral1
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:TclCreateLiteral
+   ...
+}
+{
+   supp3
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:realloc
+   fun:TclpRealloc
+   fun:GrowStringBuffer
+   fun:AppendUtfToUtfRep
+   fun:Tcl_AppendLimitedToObj
+   fun:Tcl_AppendToObj
+   fun:Tcl_AppendFormatToObj
+   ...
+}
+{
+   supp4
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:TclHandleCreate
+   fun:Tcl_CreateInterp
+   ...
+}
+{
+   supp5
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:SetCmdNameObj
+   fun:TclSetCmdNameObj
+   fun:CompileCmdLiteral
+   ...
+}
+{
+   supp8
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:Tcl_NewObj
+   fun:Tcl_ObjPrintf
+   ...
+}
+{
+   supp9
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:TclNREvalObjEx
+   ...
+}
+{
+   supp10
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:TEBCresume
+   ...
+}
+{
+   supp11
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:TclNREvalObjv
+   ...
+}
+{
+   supp12
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:EvalObjvCore
+   ...
+}
+{
+   supp13
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:Tcl_CreateInterp
+   ...
+}
+{
+   supp14
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_Alloc
+   fun:TclInitByteCode
+   ...
+}

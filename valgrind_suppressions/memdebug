@@ -1,0 +1,141 @@
+{
+   CreateLiteral1
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:TclCreateLiteral
+   ...
+}
+{
+   memdebugsupp1
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_AttemptDbCkalloc
+   fun:Tcl_AttemptDbCkrealloc
+   fun:GrowStringBuffer
+   fun:AppendUtfToUtfRep
+   fun:Tcl_AppendLimitedToObj
+   fun:Tcl_AppendToObj
+   ...
+}
+{
+   CreateInterp1
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:TclHandleCreate
+   fun:Tcl_CreateInterp
+   ...
+}
+{
+   memdebugsupp2
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:Tcl_DbNewObj
+   fun:Tcl_ObjPrintf
+   fun:Tcl_MainEx
+   ...
+}
+{
+   memdebugsupp3
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:TclNREvalObjEx
+   ...
+}
+{
+   memdebugsupp4
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:TEBCresume
+   ...
+}
+{
+   memdebugsupp5
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:TclNREvalObjv
+   ...
+}
+{
+   memdebugsupp6
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:EvalObjvCore
+   ...
+}
+{
+   memdebugsupp7
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:Tcl_CreateInterp
+   ...
+}
+{
+   memdebugsupp8
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:TclInitByteCode
+   ...
+}
+{
+   memdebugsupp9
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:TclInitByteCode
+   ...
+}
+{
+   supp5
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:SetCmdNameObj
+   fun:TclSetCmdNameObj
+   fun:CompileCmdLiteral
+   ...
+}
+{
+   supp5
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   fun:TclpAlloc
+   fun:Tcl_DbCkalloc
+   fun:SetCmdNameObj
+   fun:TclSetCmdNameObj
+   fun:CompileCmdLiteral
+   ...
+}
