@@ -1,0 +1,46 @@
+if {"bench" ni [info commands bench]} {
+	package require bench
+	namespace import bench::*
+}
+
+set here	[file dirname [file normalize [info script]]]
+
+package require hyprdom
+package require tdom
+
+proc readfile fn { #<<<
+	set h	[open $fn r]
+	try {
+		chan configure $h -encoding utf-8
+		read $h
+	} finally {
+		close $h
+	}
+}
+#>>>
+
+proc main {} {
+bench serialize-1.1 {Serialize the XPath grammar XML file} -setup { #<<<
+	set xml	[readfile [file join $::here ../xpath/xpath-grammar.xml]]
+	set hyprdom_root	[hyprdom parse $xml]
+	set doc				[dom parse $xml]
+	set tdom_root		[domDoc $doc documentElement]
+} -compare {
+	hyprdom {
+		hyprdom asXML $hyprdom_root
+		list
+	}
+	tdom {
+		domNode $tdom_root asXML
+		list
+	}
+} -cleanup {
+	$doc delete
+	hyprdom free $hyprdom_root
+	unset -nocomplain xml doc hyprdom_root tdom_root
+} -result {}
+#>>>
+}
+main
+
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4
