@@ -92,6 +92,7 @@ struct parse_context {
 	Tcl_Interp*			interp;
 	XML_Parser			parser;
 	int					rc;
+	uint32_t			slots_estimate;
 	struct node_slot	cx;
 	Tcl_Obj*			text_node_name;
 	Tcl_Obj*			comment_node_name;

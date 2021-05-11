@@ -334,6 +334,7 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 	}
 
 	memsize = sizeof(struct node)*initial_slots;
+	//DBG("Allocating %ld bytes for node storage, accomodating %d slots\n", memsize, initial_slots);
 
 	alloc_rc = posix_memalign((void*)&(*doc)->nodes, g_pagesize, memsize);
 	if (unlikely(alloc_rc != 0)) goto alloc_failed;
@@ -645,6 +646,7 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 {
 	struct node*	new = NULL;
 	uint32_t		i;
+	int				alloc_rc;
 
 	for (i=doc->slot_next; i<doc->nodelist_len; i++) {
 		if (doc->nodes[i].refcount <= 0) {
@@ -654,7 +656,6 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 	}
 
 	if (i == doc->nodelist_len) { // Ran out of slots, need to grow
-		TIME("Ran out of nodes, scaling", {
 		// +1: compensate for integer division, otherwise we're initially truncated to 0
 		int				pages = ((sizeof(struct node) * doc->nodelist_len) / g_pagesize) + 1;
 		size_t			memsize;
@@ -670,8 +671,9 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 		}
 		new_slots = (pages*g_pagesize) / sizeof(struct node);
 		memsize = sizeof(struct node)*new_slots;
-		DBG("Doc %s hit nodelimit %d, growing to %d (%ld bytes)\n", Tcl_GetString(doc->docname), doc->nodelist_len, new_slots, memsize);
-		posix_memalign((void*)&newnodes, g_pagesize, memsize);
+		//DBG("Doc %s hit nodelimit %d, growing to %d (%ld bytes)\n", Tcl_GetString(doc->docname), doc->nodelist_len, new_slots, memsize);
+		alloc_rc = posix_memalign((void*)&newnodes, g_pagesize, memsize);
+		if (unlikely(alloc_rc != 0)) goto alloc_failed;
 		memcpy(newnodes, doc->nodes, doc->nodelist_len * sizeof(struct node));
 		memset(newnodes+i, 0, sizeof(struct node)*(new_slots-i));
 		free(doc->nodes); doc->nodes = newnodes;
@@ -681,15 +683,19 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 			doc->nodes[j].doc = doc;
 
 		new = &doc->nodes[i];
-		});
 	}
 
 	new->refcount = 1;
 	slot_ref->doc = doc;
 	slot_ref->slot = i;
 	slot_ref->epoch = new->epoch;
+	doc->slot_next = i;
 
 	return new;
+
+alloc_failed:
+	// TODO: Handle this better
+	return NULL;
 }
 
 //>>>
@@ -738,7 +744,7 @@ static void pcb_start_element(void* userData, const XML_Char* name, const XML_Ch
 	//DBG("pcb_start_element: (%s)\n", name);
 	if (unlikely(pc->cx.doc == NULL)) {
 		// First element: create the doc and make this the root
-		if (TCL_OK != (pc->rc = new_doc(pc->interp, 0, name, &pc->cx.doc))) goto err;
+		if (TCL_OK != (pc->rc = new_doc(pc->interp, pc->slots_estimate, name, &pc->cx.doc))) goto err;
 		node = &pc->cx.doc->nodes[pc->cx.doc->root];
 		//DBG("Created new doc %s with root %s\n", Tcl_GetString(pc->cx.doc->docname), name);
 		if (TCL_OK != (pc->rc = get_node_slot(pc->interp, node, &myslot))) goto err;
@@ -921,6 +927,7 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 		.text_node_name		= NULL,
 		.comment_node_name	= NULL,
 		.pi_node_name		= NULL,
+		.slots_estimate		= 0,
 		.cx	= {
 			.doc	= NULL,
 			.slot	= 0,
@@ -928,13 +935,15 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 		}
 	};
 
-	TIME("parse_cmd", 
 	CHECK_ARGS(1, "xml");
 
 	//DBG("parse_cmd\n");
 	pc.parser = XML_ParserCreate(NULL);
 
 	xmldata = Tcl_GetStringFromObj(objv[1], &xmllen);
+
+	// Guess that we'll have about 1 node per 10 chars in the XML
+	pc.slots_estimate = xmllen / 10;
 
 	XML_SetUserData(pc.parser, &pc);
 
@@ -970,6 +979,7 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 	}
 
 done:
+	//DBG("Estimated %d slots to be required, used: %d\n", pc.slots_estimate, pc.cx.doc->slot_next);
 	if (pc.parser) {
 		XML_ParserFree(pc.parser);
 		pc.parser = NULL;
@@ -979,7 +989,6 @@ done:
 	replace_tclobj(&pc.pi_node_name, NULL);
 	pc.cx.doc = NULL;
 	pc.interp = NULL;
-	);
 	return pc.rc;
 }
 
