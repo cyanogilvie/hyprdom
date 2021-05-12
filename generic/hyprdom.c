@@ -582,8 +582,31 @@ void free_node(struct node* node) //<<<
 	while (likely(childslot)) {
 		struct node*	child = &nodes[childslot];
 		childslot = child->next_sibling;
-		//DecrRefNode(child);
-		free_node(child);
+		free_node_fast(child);
+	}
+	node->first_child = 0;
+	node->last_child = 0;
+
+	replace_tclobj(&node->value, NULL);
+	node->epoch++;
+	node->refcount = -1;
+
+	if (node->doc->slot_next > myslot)
+		node->doc->slot_next = myslot;
+}
+
+//>>>
+void free_node_fast(struct node* node) // Special case: our parent and its whole sub-tree are going away, no need to detach and adjust all the links <<<
+{
+	struct node*	nodes = node->doc->nodes;
+	const uint32_t	myslot = node - nodes;
+	uint32_t		childslot;
+
+	childslot = node->first_child;
+	while (likely(childslot)) {
+		struct node*	child = &nodes[childslot];
+		childslot = child->next_sibling;
+		free_node_fast(child);
 	}
 	node->first_child = 0;
 	node->last_child = 0;
@@ -618,10 +641,18 @@ static inline void IncrRefNode(struct node* node) //<<<
 //>>>
 void free_doc(struct doc** doc) //<<<
 {
-	uint32_t	i;
+	uint32_t		i;
+	struct node*	nodes = (*doc)->nodes;
+	const uint32_t	nodelist_len = (*doc)->nodelist_len;
 
-	for (i=0; i < (*doc)->nodelist_len; i++)
-		DecrRefNode(&(*doc)->nodes[i]);
+	/* Special case: the whole doc is being freed, all nodes (which can't be
+	 * shared with other docs) will be freed, so no need to walk the tree,
+	 * just blast through the array in a memory-prefetch friendly way and
+	 * decref the node->value if refcount > 0
+	 */
+	for (i=1; i<nodelist_len; i++)
+		if (nodes[i].value && nodes[i].refcount > 0 && nodes[i].value->refCount > 0)
+			Tcl_DecrRefCount(nodes[i].value);
 
 	free((*doc)->nodes);
 	(*doc)->nodes = NULL;
@@ -1572,6 +1603,58 @@ done:
 }
 
 //>>>
+static int xpath_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *const objv[]) //<<<
+{
+	struct node_slot*		node_slot = NULL;
+	xpath1_context_t*		parser = NULL;
+	int						remain;
+	int						buflen;
+	struct xpath1_parse_cx	xpath_cx = {
+		.interp	= interp,
+		.buf	= NULL,
+		.ofs	= 0,
+		.len	= 0,
+		.rc		= TCL_OK,
+		.p		= new_dedup_pool(interp)
+	};
+	Tcl_Obj*				ops = NULL;
+
+	CHECK_ARGS(2, "node xpath");
+
+	TEST_OK_LABEL(done, xpath_cx.rc, Hyprdom_GetNodeSlotFromObj(interp, objv[1], &node_slot));
+
+	xpath_cx.buf = Tcl_GetStringFromObj(objv[2], &buflen);
+
+	xpath_cx.len = buflen;
+	parser = xpath1_create(&xpath_cx);
+	//remain = xpath1_parse(parser, &ops);
+	{
+		int ans;
+		remain = xpath1_parse(parser, &ans);
+		replace_tclobj(&ops, Tcl_NewIntObj(ans));
+	}
+	if (remain && xpath_cx.rc == TCL_OK) {
+		xpath_cx.rc = TCL_ERROR;
+		Tcl_SetObjResult(interp, Tcl_ObjPrintf("Garbage after xpath"));
+		goto done;
+	}
+	xpath1_destroy(parser);
+
+	if (xpath_cx.rc == TCL_OK)
+		Tcl_SetObjResult(interp, ops);
+
+done:
+	replace_tclobj(&ops, NULL);
+
+	if (xpath_cx.p) {
+		free_dedup_pool(xpath_cx.p);
+		xpath_cx.p = NULL;
+	}
+
+	return xpath_cx.rc;
+}
+
+//>>>
 
 #ifdef __cplusplus
 extern "C" {
@@ -1608,6 +1691,7 @@ DLLEXPORT int Hyprdom_Init(Tcl_Interp* interp) //<<<
 	Tcl_CreateObjCommand(interp, NS "::autonode_unknown",	autonode_unknown_cmd,	NULL, NULL);
 	Tcl_CreateObjCommand(interp, NS "::add",				add_cmd,				NULL, NULL);
 	Tcl_CreateObjCommand(interp, NS "::current_node",		current_node_cmd,		NULL, NULL);
+	Tcl_CreateObjCommand(interp, NS "::xpath",				xpath_cmd,				NULL, NULL);
 
 	TEST_OK_LABEL(done, rc, Tcl_PkgProvide(interp, PACKAGE_NAME, PACKAGE_VERSION));
 

@@ -18,6 +18,7 @@ proc main {} {
 	} 100]"
 	set root [hyprdom parse $xml]
 	puts "Peak: [exec cat /proc/[pid]/status | grep VmRSS]"
+	puts [memory info]
 	hyprdom free $root
 	puts "After free: [exec cat /proc/[pid]/status | grep VmRSS]"
 }

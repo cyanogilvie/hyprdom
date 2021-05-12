@@ -23,15 +23,10 @@ proc main {} {
 bench parse-1.1 {Parse the XPath grammar XML file} -setup { #<<<
 	set xml	[readfile [file join $::here ../xpath/xpath-grammar.xml]]
 } -compare {
-	hyprdom {
-		hyprdom free [hyprdom parse $xml]
-	}
-	tdom {
-		set doc	[dom parse $xml]
-		$doc delete
-	}
+	hyprdom	{ hyprdom free [hyprdom parse $xml] }
+	tdom	{ domDoc [dom parse $xml] delete }
 } -cleanup {
-	unset -nocomplain xml doc
+	unset -nocomplain xml
 } -result {}
 #>>>
 }

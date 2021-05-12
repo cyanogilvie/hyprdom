@@ -1,0 +1,142 @@
+# This is the calc1 grammar
+
+%auxil	"struct calc1_parse_cx* "
+%value	"int "
+%prefix	"calc1"
+
+%header {
+#include "hyprdomInt.h"
+
+	struct calc1_parse_cx {
+		const char*			buf;
+		size_t				len;
+		size_t				ofs;
+		Tcl_Interp*			interp;
+		int					rc;
+		struct dedup_pool*	p;
+	};
+}
+
+%source {
+#include "hyprdomInt.h"
+
+#define PCC_GETCHAR(auxil)				calc1_get_next_char(auxil)
+#define PCC_ERROR(auxil)				calc1_error(auxil)
+#define PCC_MALLOC(auxil, size)			ckalloc(size)
+#define PCC_REALLOC(auxil, ptr, size)	ckrealloc(ptr, size)
+#define PCC_FREE(auxil, ptr)			ckfree(ptr)
+#if DEBUG
+#define PCC_DEBUG(event, rule, level, pos, buffer, length)	calc1_debug(event, rule, level, pos, buffer, length)
+	static void calc1_debug(int event, const char* rule, int level, int pos, const char* buffer, int length) //<<<
+	{
+		static const char*	event_names[] = {
+			"Evaluating rule",
+			"Matched rule",
+			"Abandoning rule"
+		};
+
+		DBG("calc1 parse %*s%s %s @%d [%.*s]\n", level * 2, "", event_names[event], rule, pos, length, buffer);
+	}
+
+	//>>>
+#endif
+
+	static int calc1_get_next_char(struct calc1_parse_cx* cx) //<<<
+	{
+		if (unlikely(cx->ofs >= cx->len))
+			return -1;
+
+		return cx->buf[cx->ofs++];
+	}
+
+	//>>>
+	static void calc1_error(struct calc1_parse_cx* cx) //<<<
+	{
+		breakpoint();
+		if (cx->rc == TCL_OK) {
+			cx->rc = TCL_ERROR;
+			Tcl_SetObjResult(cx->interp, Tcl_ObjPrintf("Syntax error parsing calc: %s", cx->buf));
+		}
+	}
+
+	//>>>
+
+	enum colour_target {
+		FG = 38,
+		BG = 48
+	};
+
+	#define COLOUR_ERROR	colour(&ds, BG, 0xc0, 0, 0); colour(&ds, FG, 0xff, 0xff, 0xff);
+
+	static void colour(Tcl_DString* ds, enum colour_target target, unsigned char r, unsigned char g, unsigned char b) //<<<
+	{
+		char	buf[12+8+1];
+		int		len;
+
+		len = sprintf(buf, "\x1B[%d;2;%d;%d;%dm", target, r, g, b);
+		Tcl_DStringAppend(ds, buf, len);
+	}
+
+	//>>>
+	static inline int imin(const int a, const int b) //<<<
+	{
+		return a < b ? a : b;
+	}
+
+	//>>>
+	static inline int imax(const int a, const int b) //<<<
+	{
+		return a > b ? a : b;
+	}
+
+	//>>>
+	static void err(struct calc1_parse_cx* auxil, size_t at) //<<<
+	{
+		Tcl_DString		ds;
+
+		Tcl_DStringInit(&ds);
+		Tcl_DStringAppend(&ds, auxil->buf, at);
+		//Tcl_DStringAppend(&ds, "\x1B[41m\x1B[30m", 10);		// Red bg, black fg
+		//Tcl_DStringAppend(&ds, "\x1B[41m\x1B[1m\x1B[4m\x1B[37m", 18);	// Red bg, bright white fg
+		COLOUR_ERROR;
+		Tcl_DStringAppend(&ds, "-->>", 4);
+		Tcl_DStringAppend(&ds, "\x1B[0m", 4);				// Reset colour
+		Tcl_DStringAppend(&ds, auxil->buf+at, imin(1, auxil->len - at));
+		COLOUR_ERROR;
+		Tcl_DStringAppend(&ds, "<<--", 4);
+		Tcl_DStringAppend(&ds, "\x1B[0m", 4);				// Reset colour
+		Tcl_DStringAppend(&ds, auxil->buf+at+1, imax(0, auxil->len - at - 1));
+		auxil->rc = TCL_ERROR;
+		Tcl_SetObjResult(auxil->interp, Tcl_ObjPrintf("Syntax error @ %ld: %s", at, Tcl_DStringValue(&ds)));
+		Tcl_DStringFree(&ds);
+	}
+
+	//>>>
+}
+
+statement			<-	_ e:expr _ EOL ~{err(auxil, $0e);}	{ $$ = e; }
+
+expr				<-	  e:term ~{err(auxil, $0e);}		{ $$ = e; }
+
+term				<-	  l:term _ '+' _ r:factor			{ $$ = l + r; }
+						/ l:term _ '-' _ r:factor			{ $$ = l - r; }
+						/ e:factor							{ $$ = e; }
+
+factor				<-	  l:factor _ '*' _ r:unary			{ $$ = l * r; }
+						/ l:factor _ '/' _ r:unary			{ $$ = l / r; }
+						/ e:unary							{ $$ = e; }
+
+unary				<-	  '+' _ e:unary						{ $$ = +e; }
+						/ '-' _ e:unary						{ $$ = -e; }
+						/ e:primary							{ $$ = e; }
+
+primary				<-	  < [0-9]+ >						{ $$ = atoi($1); }
+						/ '(' _ e:expr _ ')'				{ $$ = e; }
+
+_					<-	  [ \t\n\r]*
+
+EOL					<-	  ';' / !.
+
+
+
+%%

@@ -12,6 +12,7 @@
 #include "dedup.h"
 #include "tip445.h"
 #include "names.h"
+#include "xpath1.h"
 
 // Taken from tclInt.h:
 #if !defined(INT2PTR) && !defined(PTR2INT)
@@ -96,6 +97,7 @@ void breakpoint();
 void free_internal_rep_hyprdom_node(Tcl_Obj* obj);
 void update_string_rep_hyprdom_node(Tcl_Obj* obj);
 void free_doc(struct doc** doc);
+void free_node_fast(struct node* node);
 int Hyprdom_GetDocByName(Tcl_Interp* interp /* may be NULL */, const char* docname, struct doc** doc);
 int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const char* name, uint32_t* name_id);
 void detach_node(struct node* node);

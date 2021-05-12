@@ -99,6 +99,7 @@ INSTALL_LIBRARY	= @INSTALL_LIBRARY@
 PACKAGE_NAME	= @PACKAGE_NAME@
 PACKAGE_VERSION	= @PACKAGE_VERSION@
 CC		= @CC@
+CC_FOR_BUILD	= @CC_FOR_BUILD@
 CFLAGS_DEFAULT	= @CFLAGS_DEFAULT@
 CFLAGS_WARNING	= @CFLAGS_WARNING@
 EXEEXT		= @EXEEXT@
@@ -178,6 +179,8 @@ VALGRINDARGS	= --tool=memcheck --num-callers=8 --leak-resolution=high \
 		  --suppressions=valgrind_suppressions/general \
 		  --suppressions=valgrind_suppressions/memdebug
 
+PACKCCARGS	= 
+
 .SUFFIXES: .c .$(OBJEXT)
 
 #========================================================================
@@ -201,7 +204,7 @@ all: binaries libraries doc
 # of the Makefile, in the "BINARIES" variable.
 #========================================================================
 
-binaries: $(BINARIES)
+binaries: parsers $(BINARIES)
 
 libraries:
 
@@ -285,6 +288,9 @@ valgrind: binaries libraries
 valgrindshell: binaries libraries
 	LD_PRELOAD="$(PKG_LIB_FILE)" $(TCLSH_ENV) $(PKG_ENV) $(VALGRIND) $(VALGRINDARGS) $(TCLSH_PROG) $(SCRIPT)
 
+tools/packcc/packcc: tools/packcc/packcc.c
+	$(CC_FOR_BUILD) -o $@ $<
+
 depend:
 
 #========================================================================
@@ -322,9 +328,15 @@ $(PKG_STUB_LIB_FILE): $(PKG_STUB_OBJECTS)
 # As necessary, add $(srcdir):$(srcdir)/compat:....
 #========================================================================
 
-VPATH = $(srcdir):$(srcdir)/generic:$(srcdir)/unix:$(srcdir)/win:$(srcdir)/macosx
+VPATH = $(srcdir):$(srcdir)/generic:$(srcdir)/unix:$(srcdir)/win:$(srcdir)/macosx:$(srcdir)/parsers
 
-.c.@OBJEXT@:
+$(filter parsers/%,$(PKG_SOURCES)): parsers/%.c: generic/%.peg tools/packcc/packcc
+	@echo "Building parser $@ from $<"
+	(mkdir -p parsers; cd parsers; ../tools/packcc/packcc $(PACKCCARGS) -o $* ../generic/$*.peg)
+
+parsers: $(filter parsers/%,$(PKG_SOURCES))
+
+$(PKG_OBJECTS): %.@OBJEXT@: %.c
 	$(COMPILE) -c `@CYGPATH@ $<` -o $@
 
 #========================================================================
@@ -472,7 +484,7 @@ tags:
 	ctags-exuberant --recurse=yes generic/*
 
 .PHONY: all binaries clean depend distclean doc install libraries test
-.PHONY: gdb gdb-test valgrind valgrindshell tags benchmark perf mem
+.PHONY: gdb gdb-test valgrind valgrindshell tags benchmark perf mem parsers
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

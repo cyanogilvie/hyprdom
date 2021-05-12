@@ -12,7 +12,9 @@ configure
 pkgIndex.tcl
 doc/hyprdom.n
 tags
-valgrind_suppressions
 perf.data
 perf.data.old
 last
+parsers/*.c
+parsers/*.h
+tools/packcc/packcc

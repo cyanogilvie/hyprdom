@@ -1,0 +1,52 @@
+package require tcltest
+namespace import ::tcltest::*
+::tcltest::loadTestedCommands
+
+package require hyprdom
+proc readfile fn {
+	set h	[open $fn r]
+	try {read $h} finally {close $h}
+}
+
+test xpath-1.0 {Parse a basic XPath expression} -body { #<<<
+	set root	[hyprdom new foo]
+	#hyprdom xpath $root { (: hello, comment :) /child::foo[1][@bar="baz"]}
+	#hyprdom xpath $root {foo or bar}
+	hyprdom xpath $root {10 - 6 * 7 + 2}
+} -cleanup {
+	hyprdom free $root
+	unset -nocomplain root
+} -result {-30}
+#>>>
+test xpath-1.0.1 {Parse a basic XPath expression} -body { #<<<
+	set root	[hyprdom new foo]
+	hyprdom xpath $root { 10 - 6 * 7 + 2; }
+} -cleanup {
+	hyprdom free $root
+	unset -nocomplain root
+} -result {-30}
+#>>>
+test xpath-1.1 {Leading garbage} -body { #<<<
+	set root	[hyprdom new foo]
+	#hyprdom xpath $root { (: hello, comment :) /child::foo[1][@bar="baz"]}
+	#hyprdom xpath $root {foo or bar}
+	set rc	[catch {hyprdom xpath $root { 42  abc 10 - 6 * 7 + 2}} r o]
+	#hyprdom xpath $root {10 - 6 * 7 + 2 x}
+	#hyprdom xpath $root {x}
+	if {$rc == 2} {dict set o -code return; dict incr o -level 1}
+	if {$rc in {3 4}} {dict incr o -level 1}
+	set stripped_r	[regsub -all {\x1B\[[0-9;]+m} $r {}]
+	if {$stripped_r eq "Syntax error @ 5:  42  -->>a<<--bc 10 - 6 * 7 + 2"} {
+		set r	matches
+	}
+	return -options $o $r
+} -cleanup {
+	hyprdom free $root
+	unset -nocomplain root r o rc stripped_r
+} -returnCodes error -errorCode NONE -result matches
+#>>>
+
+::tcltest::cleanupTests
+return
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4
+

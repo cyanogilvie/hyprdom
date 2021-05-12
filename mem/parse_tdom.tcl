@@ -17,6 +17,7 @@ proc main {} {
 	} 100]"
 	set doc [dom parse $xml]
 	puts "Peak: [exec cat /proc/[pid]/status | grep VmRSS]"
+	puts [memory info]
 	domDoc $doc delete
 	puts "After free: [exec cat /proc/[pid]/status | grep VmRSS]"
 }

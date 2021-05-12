@@ -74,9 +74,9 @@ ENABLE_DEDUP
 # and PKG_TCL_SOURCES.
 #-----------------------------------------------------------------------
 
-TEA_ADD_SOURCES([hyprdom.c dedup.c names.c])
+HYPRDOM_ADD_SOURCES([hyprdom.c dedup.c names.c parsers/xpath1.c parsers/calc1.c])
 TEA_ADD_HEADERS([])
-TEA_ADD_INCLUDES([])
+TEA_ADD_INCLUDES([-Igeneric -Iparsers])
 TEA_ADD_LIBS([`pkg-config expat --libs`])
 TEA_ADD_CFLAGS([`pkg-config expat --cflags`])
 TEA_ADD_STUB_SOURCES([])
@@ -94,7 +94,7 @@ TEA_ADD_TCL_SOURCES([])
 # TEA_ADD_* any platform specific compiler/build info here.
 #--------------------------------------------------------------------
 
-#CLEANFILES="$CLEANFILES pkgIndex.tcl"
+CLEANFILES="$CLEANFILES parsers/*.c parsers/*.h tools/packcc/packcc"
 if test "${TEA_PLATFORM}" = "windows" ; then
     # Ensure no empty if clauses
     :
@@ -149,6 +149,12 @@ TEA_CONFIG_CFLAGS
 TIP445
 AC_CHECK_FUNCS_ONCE([ffsll])
 AX_GCC_BUILTIN(__builtin_ffsll)
+
+# Build tools needed on the build host to produce some of the source
+# files.  This macro attempts to set CC_FOR_BUILD to a compiler that
+# can produce binaries that run on the build host rather than the
+# target / host when cross-compiling
+AX_CC_FOR_BUILD
 
 #--------------------------------------------------------------------
 # Set the default compiler switches based on the --enable-symbols option.

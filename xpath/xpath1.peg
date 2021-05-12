@@ -1,4 +1,4 @@
-		Xpath	<-	^ Ignored* OrExpr Ignored* $
+		Xpath	<-	Ignored* OrExpr Ignored*
 		Ignored	<-	Comment / ImplicitlyAllowedWhitespace
 		Comment	<-	CommentStart CommentContent CommentEnd
 		ExprSingle	<-	OrExpr
