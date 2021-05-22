@@ -198,27 +198,32 @@ void dedup_stats(Tcl_DString* ds, struct dedup_pool* p) //<<<
 	Tcl_HashSearch		search;
 	struct kc_entry*	e;
 	int					entries;
+	char				numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(uint64_t)+1];
+	int					numbuf_len;
 
 	he = Tcl_FirstHashEntry(&p->kc, &search);
 	while (he) {
 		ptrdiff_t	idx = (ptrdiff_t)Tcl_GetHashValue(he);
-		char		numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(uint64_t)+1];
 
 		//if (idx >= KC_ENTRIES) Tcl_Panic("age_cache: idx (%ld) is out of bounds, KC_ENTRIES: %d", idx, KC_ENTRIES);
 		//printf("age_cache: kc_count: %d", p->kc_count);
 		e = &p->kc_entries[idx];
 
 		Tcl_DStringAppend(ds, "refCount: ", -1);
-		sprintf(numbuf, "%4d", e->val->refCount);
-		Tcl_DStringAppend(ds, numbuf, -1);
+		numbuf_len = sprintf(numbuf, "%4d", e->val->refCount);
+		Tcl_DStringAppend(ds, numbuf, numbuf_len);
 		Tcl_DStringAppend(ds, ", heat: ", -1);
-		sprintf(numbuf, "%4d", e->hits);
-		Tcl_DStringAppend(ds, numbuf, -1);
+		numbuf_len = sprintf(numbuf, "%4d", e->hits);
+		Tcl_DStringAppend(ds, numbuf, numbuf_len);
 		Tcl_DStringAppend(ds, ", \"", -1);
 		Tcl_DStringAppend(ds, Tcl_GetString(e->val), -1);
 		Tcl_DStringAppend(ds, "\"\n", -1);
 		he = Tcl_NextHashEntry(&search);
+		entries++;
 	}
+	Tcl_DStringAppend(ds, "entries: ", -1);
+	numbuf_len = sprintf(numbuf, "%4d", e->hits);
+	Tcl_DStringAppend(ds, numbuf, numbuf_len);
 }
 
 //>>>

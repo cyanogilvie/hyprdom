@@ -139,6 +139,7 @@ int parse_xml_re(struct parse_context* restrict pc, const char* xml /* Must be n
 	radish_search_init(pc->interp, &pc->cx.doc->radish_names, &pc->on_error, &search);
 
 #define radish_search_reset() \
+	__builtin_prefetch(search.radish->nodes, 0, 3); \
 	search.slot = 0; \
 	search.divergence = 0; \
 	search.value_ofs = 0;
@@ -209,8 +210,8 @@ top:
 			goto gotname;
 		}
 
-		<attrval>		'"' 		=> attrvaldquote {translated = 0; goto yyc_attrvaldquote;}
-		<attrval>		"'" 		=> attrvalsquote {translated = 0; goto yyc_attrvalsquote;}
+		<attrval>		'"' 		=> attrvaldquote {goto yyc_attrvaldquote;}
+		<attrval>		"'" 		=> attrvalsquote {goto yyc_attrvalsquote;}
 
 		<attrvaldquote>	@textstart [^"<&\x00]+ / "&"	{
 			Tcl_DStringAppend(&val, xml+(textstart-xml), s-textstart);
@@ -264,11 +265,12 @@ top:
 		<attrvalsquote>	@textstart [^'<&\x00]+ / "&"	{
 			Tcl_DStringAppend(&val, xml+(textstart-xml), s-textstart);
 			translated = 1;
+			textstart = s;
 			goto yyc_attrvalsquote;
 		}
 		<attrvalsquote>	@textstart [^'<&\x00]+ / "'"	{
 			if (translated) {
-				Tcl_DStringAppend(&val, xml+(textstart-xml), s-textstart);
+				Tcl_DStringAppend(&val, textstart, s-textstart);
 			}
 			goto yyc_attrvalsquote;
 		}
@@ -305,8 +307,8 @@ top:
 			base = 10;
 			goto got_char_ref;
 		}
-		<attrvalsquote> "'" {
-			goto yyc_attribs;
+		<attrvalsquote> @attrvalend "'" {
+			goto gotattrib;
 		}
 
 		<elemcontent>	Comment		{ goto gotcomment; }
@@ -341,6 +343,11 @@ top:
 
 			node->name_id = pc->text_node_name_id;
 			TEST_OK_LABEL(elemcontent_text_err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
+
+			if (translated) {
+				translated = 0;
+				Tcl_DStringFree(&val);
+			}
 
 			goto yyc_elemcontent;
 
@@ -386,6 +393,27 @@ top:
 		}
 
 		<elemcontent>	"</"					=> etagtail {
+			if (translated) {
+				struct node*			node = NULL;
+				struct node_slot		myslot = {};
+				const char*				text_val;
+				int						text_len;
+
+				node = new_node(pc->cx.doc, &myslot);
+				node->type = TEXT;
+
+				text_val = Tcl_DStringValue(&val);
+				text_len = Tcl_DStringLength(&val);
+
+				replace_tclobj(&node->value, get_string(pc->cx.doc->dedup_pool, text_val, text_len));
+
+				node->name_id = pc->text_node_name_id;
+				TEST_OK_LABEL(elemcontent_text_err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
+
+				translated = 0;
+				Tcl_DStringFree(&val);
+			}
+
 			goto getname;
 		}
 
@@ -542,10 +570,13 @@ gotattrib: //<<<
 		// TODO: Fix error path leaks
 		TEST_OK_JMP(pc->on_error, pc->rc, attach_node(pc->interp, &attrslot, &pc->cx, NULL));
 		attrnode = NULL;
+
+		if (translated) {
+			translated = 0;
+			Tcl_DStringFree(&val);
+		}
 	}
 
-	Tcl_DStringFree(&val);
-	translated = 0;
 	c = yycattribs;
 	goto yyc_attribs;
 

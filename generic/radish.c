@@ -7,15 +7,18 @@
 	do { \
 		uint32_t			i; \
 		for (i=0; i<r->next_free_slot; i++) { \
-			Tcl_DString*	node = &r->nodes[i]; \
-			const char*		radish_node = Tcl_DStringValue(node); \
-			size_t			prefix_len = strlen(radish_node); \
-			intptr_t		value; \
-			uint32_t		children; /* by the time block runs, points at the first child */ \
+			Tcl_DString*			node = &r->nodes[i]; \
+			const char*				radish_node = Tcl_DStringValue(node); \
+			enum radish_node_type	node_type; \
+			size_t					prefix_len; \
+			intptr_t				value; \
+			uint32_t				children; /* by the time block runs, points at the first child */ \
 			\
+			node_type = *radish_node++; \
+			prefix_len = strlen(radish_node); \
 			children = prefix_len+1; \
 			\
-			value = (intptr_t)radish_node[children]; \
+			value = *(intptr_t*)(radish_node+children); \
 			children += sizeof(ClientData); \
 			\
 			block \
@@ -25,29 +28,81 @@
 #if RADISH_HOTEDGE_TUNE
 #define RADISH_FOREACH_CHILD(block) \
 	if (Tcl_DStringLength(node) > 0)  { \
-		uint32_t	rp = children; \
-		while (radish_node[rp]) { \
-			const char			child_char = radish_node[rp++]; \
-			const unsigned char child_heat = radish_node[rp++]; \
-			uint32_t			child_slot; \
-		   	rp += read_radish_slot(radish_node+rp, &child_slot); \
-			\
-			block \
+		switch (node_type) { \
+			case RADISH_PACKED: \
+				{ \
+					uint32_t	rp = children; \
+					while (radish_node[rp]) { \
+						const char			child_char = radish_node[rp++]; \
+						const unsigned char child_heat = radish_node[rp++]; \
+						uint32_t			child_slot; \
+						rp += read_radish_slot(radish_node+rp, &child_slot); \
+						\
+						block \
+					} \
+					break; \
+				} \
+			case RADISH_LUT8: \
+				{ \
+					while (radish_node[children]) { \
+						const unsigned char	min = radish_node[children++]; \
+						const unsigned char	max = radish_node[children++]; \
+						unsigned char i; \
+						for (i=min; i<=max; i++) { \
+							const char			child_char = i; \
+							uint32_t			child_slot = (unsigned char)radish_node[children+i-min]; \
+							\
+							block \
+						} \
+					} \
+					break; \
+				} \
+			default: \
+				Tcl_Panic("Corrupt radish, node type is not valid: \"%d\"", node_type); \
 		} \
 	};
 #else
 #define RADISH_FOREACH_CHILD(block) \
 	if (Tcl_DStringLength(node) > 0)  { \
-		uint32_t	rp = children; \
-		while (radish_node[rp]) { \
-			const char	child_char = radish_node[rp++]; \
-			uint32_t	child_slot; \
-		   	rp += read_radish_slot(radish_node+rp, &child_slot); \
-			\
-			block \
+		switch (node_type) { \
+			case RADISH_PACKED: \
+				{ \
+					uint32_t	rp = children; \
+					while (radish_node[rp]) { \
+						const char			child_char = radish_node[rp++]; \
+						uint32_t			child_slot; \
+						rp += read_radish_slot(radish_node+rp, &child_slot); \
+						\
+						block \
+					} \
+					break; \
+				} \
+			case RADISH_LUT8: \
+				{ \
+					while (radish_node[children]) { \
+						const unsigned char	min = radish_node[children++]; \
+						const unsigned char	max = radish_node[children++]; \
+						unsigned char i; \
+						for (i=min; i<=max; i++) { \
+							const char			child_char = i; \
+							uint32_t			child_slot = (unsigned char)radish_node[children+i-min]; \
+							\
+							block \
+						} \
+					} \
+					break; \
+				} \
+			default: \
+				Tcl_Panic("Corrupt radish, node type is not valid: \"%d\"", node_type); \
 		} \
 	};
 #endif
+
+const char* radish_node_type_str[] = {
+	"RADISH_EMPTY",
+	"RADISH_PACKED",
+	"RADISH_LUT8"
+};
 
 static inline int read_radish_slot(const char* restrict bytes, uint32_t* slot) { // Sneaky abuse of UTF-8 encoding to store radish slot references on the tail of the slots (after the prefixes) <<<
 #if RADISH_UTF8_SLOTS
@@ -193,62 +248,41 @@ void dup_internal_rep_radish(Tcl_Obj* src, Tcl_Obj* dup) //<<<
 }
 
 //>>>
-void old_update_string_rep_radish(Tcl_Obj* obj) //<<<
+static inline void update_string_rep_child_body(Tcl_DString* ds, const char child_char, uint32_t child_slot) //<<<
 {
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &radish_objtype);
-	struct radish*		r = ir->ptrAndLongRep.ptr;
-	Tcl_DString			ds;
-	uint32_t			i;
+	char	numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(uint32_t)+1];
+	char	charbuf[2];
 
-	Tcl_DStringInit(&ds);
+	charbuf[0] = child_char;
+	charbuf[1] = 0;
 
-	for (i=0; i<r->next_free_slot; i++) {
-		Tcl_DString*	node = &r->nodes[i];
-		const char*		radish_node = Tcl_DStringValue(node);
-		size_t			prefix_len = strlen(radish_node);
-		intptr_t		value;
-		char			valuestr[MAX_CHAR_LEN_DECIMAL_INTEGER(intptr_t)+2];		// +1: null term, +1 sign
-		uint32_t		rp;
+	Tcl_DStringAppendElement(ds, charbuf);
+	sprintf(numbuf, "%d", child_slot);
+	Tcl_DStringAppendElement(ds, numbuf);
+}
 
-		Tcl_DStringStartSublist(&ds);
-		Tcl_DStringAppendElement(&ds, radish_node);	// prefix
-		rp = prefix_len+1;
+//>>>
+static inline void update_string_rep_slot_body(Tcl_DString* ds, Tcl_DString* node, enum radish_node_type node_type, const char* radish_node, intptr_t value, uint32_t children) //<<<
+{
+	char		valuestr[MAX_CHAR_LEN_DECIMAL_INTEGER(intptr_t)+2]; /* +1: null term, +1 sign */ \
 
-		value = (intptr_t)radish_node[rp];
+	Tcl_DStringStartSublist(ds);
+	if (node_type != RADISH_EMPTY) {
+		Tcl_DStringAppendElement(ds, radish_node);	// prefix
+
 		sprintf(valuestr, "%ld", value);
-		Tcl_DStringAppendElement(&ds, valuestr);	// value
-		rp += sizeof(ClientData);
+		Tcl_DStringAppendElement(ds, valuestr);	// value
 
 		// children
-		Tcl_DStringStartSublist(&ds);
-		while (radish_node[rp]) {
-			uint32_t	toslot;
-			char		numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(uint32_t)+1];
-			const char	child_char = radish_node[rp++];
-#if RADISH_HOTEDGE_TUNE
-			const unsigned char	heat = radish_node[rp++];
-#endif
-			char		charbuf[2];
-
-			charbuf[0] = child_char;
-			charbuf[1] = 0;
-
-			Tcl_DStringAppendElement(&ds, charbuf);
-			rp += read_radish_slot(radish_node+rp, &toslot);
-			sprintf(numbuf, "%d", toslot);
-			Tcl_DStringAppendElement(&ds, numbuf);
+		if (radish_node[children]) {
+			Tcl_DStringStartSublist(ds);
+			RADISH_FOREACH_CHILD({ // Sets child_char, child_slot
+				update_string_rep_child_body(ds, child_char, child_slot);
+			});
+			Tcl_DStringEndSublist(ds);
 		}
-		Tcl_DStringEndSublist(&ds);
-
-		Tcl_DStringEndSublist(&ds);
 	}
-
-	obj->length = Tcl_DStringLength(&ds);
-	obj->bytes = ckalloc(obj->length+1);
-	memcpy(obj->bytes, Tcl_DStringValue(&ds), obj->length);
-	obj->bytes[obj->length] = 0;
-
-	Tcl_DStringFree(&ds);
+	Tcl_DStringEndSublist(ds);
 }
 
 //>>>
@@ -261,33 +295,7 @@ void update_string_rep_radish(Tcl_Obj* obj) //<<<
 	Tcl_DStringInit(&ds);
 
 	RADISH_FOREACH_SLOT(r, { // Sets node, radish_node, prefix_len, value and children
-		char		valuestr[MAX_CHAR_LEN_DECIMAL_INTEGER(intptr_t)+2]; /* +1: null term, +1 sign */ \
-
-		Tcl_DStringStartSublist(&ds);
-		if (Tcl_DStringLength(node)) {
-			Tcl_DStringAppendElement(&ds, radish_node);	// prefix
-
-			sprintf(valuestr, "%ld", value);
-			Tcl_DStringAppendElement(&ds, valuestr);	// value
-
-			// children
-			if (radish_node[children]) {
-				Tcl_DStringStartSublist(&ds);
-				RADISH_FOREACH_CHILD({ // Sets child_char, child_slot
-					char	numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(uint32_t)+1];
-					char	charbuf[2];
-
-					charbuf[0] = child_char;
-					charbuf[1] = 0;
-
-					Tcl_DStringAppendElement(&ds, charbuf);
-					sprintf(numbuf, "%d", child_slot);
-					Tcl_DStringAppendElement(&ds, numbuf);
-				});
-				Tcl_DStringEndSublist(&ds);
-			}
-		}
-		Tcl_DStringEndSublist(&ds);
+		update_string_rep_slot_body(&ds, node, node_type, radish_node, value, children);
 	});	
 
 	obj->length = Tcl_DStringLength(&ds);
@@ -479,11 +487,16 @@ void radish_free(struct radish* radish) //<<<
 //>>>
 void dump_radish_node(const char* prefix, Tcl_DString* node) //<<<
 {
-	const char*	radish_node = Tcl_DStringValue(node);
-	size_t		prefix_len = strlen(radish_node);
-	intptr_t	value = (intptr_t)(radish_node+prefix_len+1);
+	const char*				radish_node = Tcl_DStringValue(node);
+	enum radish_node_type	node_type;
+	size_t					prefix_len;
+	intptr_t				value;
 
-	fprintf(stderr, "%s: prefix: \"%s\" (%ld bytes) -> %ld\n", prefix, radish_node, prefix_len, value);
+	node_type = *radish_node++;
+	prefix_len = strlen(radish_node);
+	value = *(intptr_t*)(radish_node+prefix_len+1);
+
+	fprintf(stderr, "%s: type: %s, prefix: \"%s\" (%ld bytes) -> %ld\n", prefix, radish_node_type_str[node_type], radish_node, prefix_len, value);
 	{
 		const char* restrict	p = radish_node+prefix_len+1+sizeof(ClientData);
 		while (*p) {
@@ -506,20 +519,24 @@ void dump_radish_node(const char* prefix, Tcl_DString* node) //<<<
 //>>>
 void set_radish(struct radish_search* search, const char* tail, uint32_t tail_len, ClientData value) //<<<
 {
-	struct radish*	radish = search->radish;
-	uint32_t		rp = search->divergence;
-	Tcl_DString*	gp =  &radish->nodes[search->slot];
-	char* restrict	radish_node = Tcl_DStringValue(gp);
+	struct radish*			radish = search->radish;
+	uint32_t				rp = search->divergence;
+	Tcl_DString*			gp =  &radish->nodes[search->slot];
+	char* restrict			radish_node = Tcl_DStringValue(gp);
+	enum radish_node_type	node_type = *radish_node;
 
 	/*
 	 * If gp is an empty node, then set it to a leaf node with tail -> value
 	 * (happens when the radish tree is empty and the first name is
 	 * added to it).
 	 */
-	if (unlikely(Tcl_DStringLength(gp) == 0)) {
+	if (unlikely(node_type == RADISH_EMPTY)) {
+		const char node_type_byte = RADISH_PACKED;
+		Tcl_DStringAppend(gp, &node_type_byte, 1);
 		Tcl_DStringAppend(gp, tail, tail_len);
 		Tcl_DStringAppend(gp, "\0", 1);
 		Tcl_DStringAppend(gp, (char *)&value, sizeof(ClientData));
+		D(dump_radish_node("After set of RADISH_EMPTY", gp));
 		return;
 	}
 
@@ -569,6 +586,7 @@ void set_radish(struct radish_search* search, const char* tail, uint32_t tail_le
 
 		// add new node as a child
 		Tcl_DStringInit(new_node);
+		Tcl_DStringAppend(new_node, radish_node, 1);			// Copy the node_type to the new branch
 		Tcl_DStringAppend(new_node, radish_node+rp+1, len-rp-1);
 		Tcl_DStringAppend(new_node, "\0", 1);
 		Tcl_DStringAppend(new_node, radish_node+i, sizeof(ClientData));	// Copy the value to the new branch
@@ -577,6 +595,7 @@ void set_radish(struct radish_search* search, const char* tail, uint32_t tail_le
 
 		// Truncate the prefix at the divergence point, clear the value for
 		// this branch node, move the children up and truncate this dstring
+		radish_node[0] = node_type = RADISH_PACKED;
 		Tcl_DStringSetLength(gp, rp);
 		Tcl_DStringAppend(gp, "\0", 1);
 		Tcl_DStringAppend(gp, (char*)&nullval, sizeof(ClientData));	// Copy the value to the new branch
@@ -585,7 +604,7 @@ void set_radish(struct radish_search* search, const char* tail, uint32_t tail_le
 #if RADISH_HOTEDGE_TUNE
 		Tcl_DStringAppend(gp, "\0", 1);				// Initialize heat to 0.  TODO: inherit initial heat from parent branch?
 #endif
-		Tcl_DStringAppend(gp, buf, buf_len);		// Write our new slot in UTF-8
+		Tcl_DStringAppend(gp, buf, buf_len);		// Write our new slot
 
 		// gp is now remodelled as a branch node at the divergence point, and
 		// ready to receive the new child the tail prefix
@@ -609,24 +628,40 @@ void set_radish(struct radish_search* search, const char* tail, uint32_t tail_le
 		Tcl_DString*	new_node = &radish->nodes[new_slot];
 		char			buf[6];
 		const int		buf_len = write_radish_slot(buf, new_slot);
+		const char		node_type_byte = RADISH_PACKED;
 
 		// add new node as a child
 		Tcl_DStringInit(new_node);
+		Tcl_DStringAppend(new_node, &node_type_byte, 1);
 		Tcl_DStringAppend(new_node, tail+1, tail_len-1);
 		Tcl_DStringAppend(new_node, "\0", 1);
 		Tcl_DStringAppend(new_node, (char *)&value, sizeof(ClientData));
 
-		Tcl_DStringAppend(gp, tail, 1);		// Link the divergent char
+		switch (node_type) {
+			case RADISH_PACKED:
+				// TODO: if the number of children exceeds some threshold (probably 7 or so), convert gp to a RADISH_LUT8 (if radish->slots < 256)
+				Tcl_DStringAppend(gp, tail, 1);		// Link the divergent char
 #if RADISH_HOTEDGE_TUNE
-		Tcl_DStringAppend(gp, "\0", 1);		// Initialize heat to 0
+				Tcl_DStringAppend(gp, "\0", 1);		// Initialize heat to 0
 #endif
-		Tcl_DStringAppend(gp, buf, buf_len);	// Write our new slot in UTF-8
+				Tcl_DStringAppend(gp, buf, buf_len);	// Write our new slot in UTF-8
+				break;
+
+			case RADISH_LUT8:
+				// TODO: Implement
+				break;
+
+			default:
+				Tcl_Panic("Corrupt radish, node type is not valid: \"%d\"", node_type);
+		}
 	}
+	D(dump_radish_node("After set", gp));
 }
 
 //>>>
 void radish_search_init(Tcl_Interp* interp, struct radish* radish, jmp_buf* on_error, struct radish_search* search) //<<<
 {
+	__builtin_prefetch(radish->nodes, 0, 3);
 	search->radish		= radish;
 	search->slot		= 0;
 	search->divergence	= 0;
@@ -641,14 +676,16 @@ void radish_search_init(Tcl_Interp* interp, struct radish* radish, jmp_buf* on_e
 uint32_t radish_search(struct radish_search* search, const char* bytes) //<<<
 {
 	Tcl_DString*			node = &search->radish->nodes[0];
-	char* restrict			radish_node = Tcl_DStringValue(node);
+	char*					radish_node = Tcl_DStringValue(node);
 	const char* restrict	p = bytes;
 	char*					rp = radish_node;
 	uint32_t				slot = 0;
 	uint32_t				value_ofs;
+	enum radish_node_type	node_type;
 
 walk_node:
-	if (Tcl_DStringLength(node) == 0) {
+	node_type = *rp++;
+	if (node_type == RADISH_EMPTY) {
 		// We're pointing at an empty node, nothing to compare against.  set_radish will
 		// write our entire string as the prefix for this node.  (Happens with the first
 		// string searched for in an empty radish trie.
@@ -720,6 +757,7 @@ walk_node:
 
 				if (child_firstchar == next_byte) {
 #if RADISH_HOTEDGE_TUNE
+					__builtin_prefetch(&search->radish->nodes[slot], 0, 2);
 					if (last_child_byte && heat > last_child_heat + 2) {
 						// If this child isn't the first, swap it with its previous sibling (auto-tune hot edges)
 						char*		swap_rp = last_child_rp;
@@ -752,7 +790,7 @@ walk_node:
 #endif
 					// Found next radish node to walk
 					search->slot = slot;
-					node = &search->radish->nodes[search->slot];
+					node = &search->radish->nodes[slot];
 					radish_node = Tcl_DStringValue(node);
 
 					p++;
@@ -793,6 +831,7 @@ void radish_to_dot(Tcl_DString* ds, struct radish* r) //<<<
 	RADISH_FOREACH_SLOT(r, { // Sets i, node, radish_node, prefix_len, value and children
 		char	slotnum[MAX_CHAR_LEN_DECIMAL_INTEGER(uint32_t)+1];
 		int		slotnum_len = sprintf(slotnum, "%d", i);
+		(void)value;
 
 		Tcl_DStringAppend(ds, "\t", 1);
 		Tcl_DStringAppend(ds, slotnum, slotnum_len);

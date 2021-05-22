@@ -20,10 +20,8 @@ perf.data.old
 last
 parsers/*.c
 parsers/*.h
-tools/packcc/packcc
 cg.out
 lemon/
 lexers/
 prof/
 tools/bin/
-tools/

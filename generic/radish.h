@@ -3,6 +3,13 @@ enum radish_valtype {
 	RADISH_VALTYPE_TCLOBJ	/* Values are Tcl_Obj* */
 };
 
+enum radish_node_type {
+	RADISH_EMPTY = 0,
+	RADISH_PACKED,
+	RADISH_LUT8
+};
+extern const char* radish_node_type_str[];
+
 struct radish {
 	Tcl_DString*		nodes;	
 	int					refcount;

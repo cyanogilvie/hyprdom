@@ -125,11 +125,13 @@ static inline void replace_tclobj(Tcl_Obj** target, Tcl_Obj* replacement)
 		delta = after.tv_sec - second.tv_sec + (after.tv_nsec - second.tv_nsec)/1e9 - empty; \
 		DBG("Time for %s: %.1f microseconds\n", label, delta * 1e6); \
 	} while(0)
+#	define D(block) block;
 #else
 #	define DBG(...) /* nop */
 #	define FDBG(...) /* nop */
 #	define DEBUGGER /* nop */
 #	define TIME(label, task) task
+#	define D(block) /* nop */
 #endif
 
 #endif

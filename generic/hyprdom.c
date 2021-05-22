@@ -693,7 +693,7 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 {
 	struct node*	new = NULL;
 	uint32_t		i;
-	int				alloc_rc;
+	//int				alloc_rc;
 
 	for (i=doc->slot_next; i<doc->nodelist_len; i++) {
 		if (doc->nodes[i].refcount <= 0) {
@@ -706,7 +706,7 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 		// +1: compensate for integer division, otherwise we're initially truncated to 0
 		int				pages = ((sizeof(struct node) * doc->nodelist_len) / g_pagesize) + 1;
 		size_t			memsize;
-		struct node*	newnodes = NULL;
+		//struct node*	newnodes = NULL;
 		uint32_t		new_slots;
 		uint32_t		j;
 
@@ -745,9 +745,11 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 
 	return new;
 
+	/*
 alloc_failed:
 	// TODO: Handle this better
 	return NULL;
+	*/
 }
 
 //>>>
