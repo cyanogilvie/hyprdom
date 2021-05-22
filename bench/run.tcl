@@ -12,9 +12,9 @@ source [lindex [lsort -decreasing -dictionary [glob -type f -directory $here ben
 
 proc with_chan {var create use} {
 	upvar 1 $var h
-	set h	[uplevel 1 [list if 1 $create]]
+	set h	[uplevel 1 $create]
 	try {
-		uplevel 1 [list if 1 $use]
+		uplevel 1 $use
 	} on return {r o} - on break {r o} - on continue {r o} {
 		dict incr o -level 1
 		return -options $o $r
@@ -63,9 +63,9 @@ proc benchmark_mode script {
 
 			proc with_chan {var create use} {
 				upvar 1 $var h
-				set h	[uplevel 1 [list if 1 $create]]
+				set h	[uplevel 1 $create]
 				try {
-					uplevel 1 [list if 1 $use]
+					uplevel 1 $use
 				} on return {r o} - on break {r o} - on continue {r o} {
 					dict incr o -level 1
 					return -options $o $r

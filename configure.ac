@@ -63,6 +63,7 @@ TEA_SETUP_COMPILER
 
 # Check for feature toggles
 ENABLE_DEDUP
+#AM_WITH_EXPAT
 
 #-----------------------------------------------------------------------
 # __CHANGE__
@@ -74,7 +75,7 @@ ENABLE_DEDUP
 # and PKG_TCL_SOURCES.
 #-----------------------------------------------------------------------
 
-HYPRDOM_ADD_SOURCES([hyprdom.c dedup.c names.c parsers/xpath1.c parsers/calc1.c])
+HYPRDOM_ADD_SOURCES([hyprdom.c dedup.c names.c radish.c parsers/xpath1.c parsers/calc1.c lexers/parse_xml.c])
 TEA_ADD_HEADERS([])
 TEA_ADD_INCLUDES([-Igeneric -Iparsers])
 TEA_ADD_LIBS([`pkg-config expat --libs`])
@@ -94,7 +95,7 @@ TEA_ADD_TCL_SOURCES([])
 # TEA_ADD_* any platform specific compiler/build info here.
 #--------------------------------------------------------------------
 
-CLEANFILES="$CLEANFILES parsers/*.c parsers/*.h tools/packcc/packcc"
+CLEANFILES="$CLEANFILES parsers/*.c parsers/*.h tools/bin/*"
 if test "${TEA_PLATFORM}" = "windows" ; then
     # Ensure no empty if clauses
     :

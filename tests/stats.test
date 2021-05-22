@@ -1,0 +1,22 @@
+package require tcltest
+namespace import ::tcltest::*
+::tcltest::loadTestedCommands
+
+package require hyprdom
+proc readfile fn {
+	set h	[open $fn r]
+	try {read $h} finally {close $h}
+}
+
+test stats-1.0 {Document stats} -body { #<<<
+	set root	[hyprdom parse [readfile xpath/xpath-grammar.xml]]
+	hyprdom stats $root
+} -cleanup {
+	hyprdom free $root
+	unset -nocomplain root
+} -result xx
+#>>>
+
+::tcltest::cleanupTests
+return
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4

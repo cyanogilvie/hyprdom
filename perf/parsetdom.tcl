@@ -1,7 +1,7 @@
 set here	[file dirname [file normalize [info script]]]
 package require hyprdom
 #load [lindex $argv 0]
-#package require tdom
+package require tdom
 
 proc main {} {
 	global here
@@ -42,7 +42,7 @@ proc main {} {
 	puts "Parsing xpath-grammar.xml for 10 seconds"
 	set start	[clock microseconds]
 	while {[clock microseconds] - $start < 10e6} {
-		hyprdom free [hyprdom parse $xml]
+		domDoc [dom parse $xml] delete
 		incr count
 	}
 	puts "Parsed and freed $count times"

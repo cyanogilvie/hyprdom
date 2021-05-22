@@ -11,9 +11,6 @@ int g_pagesize = 4096;		/* This will be updated to the real value in Hyprdom_Ini
 #define PI_NODE_NAME		"<#pi>"
 #define COMMENT_NODE_NAME	"<#comment>"
 */
-#define TEXT_NODE_NAME		"_text_"
-#define PI_NODE_NAME		"_pi_"
-#define COMMENT_NODE_NAME	"_comment_"
 
 #define NAME_START_CHAR	":A-Z_a-z\\xC0-\\xF6\\xF8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD\\u10000-\\uEFFFF"
 #define NAME_CHAR		".0-9\\xB7\\u0300-\\u036F\\u203F-\\u2040-"
@@ -59,7 +56,7 @@ void update_string_rep_hyprdom_node(Tcl_Obj* obj) //<<<
 	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &hyprdom_node);
 	struct node_slot*	slot_ref = (struct node_slot*)ir;
 	Tcl_DString			ds;
-	char				numbuf[11];		// Needs to be big enough to hold the maximum string length of %d from a uint32_t, plus the null terminator
+	char				numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(uint32_t)+1];		// Needs to be big enough to hold the maximum string length of %d from a uint32_t, plus the null terminator
 
 	// String rep for a hyprdom node is a 3 element list: docname slot_num epoch
 	Tcl_DStringInit(&ds);
@@ -238,11 +235,26 @@ done:
 }
 
 //>>>
+int alloc_name(Tcl_Interp* interp, struct doc* doc, const char* restrict name, uint32_t len, uint32_t* new_id) //<<<
+{
+	int			rc = TCL_OK;
+	Tcl_Obj*	nameobj = NULL;
+
+	replace_tclobj(&nameobj, get_string(doc->dedup_pool, (const char*)name, len));
+	TEST_OK_LABEL(done, rc, Tcl_ListObjLength(interp, doc->names, (int*)new_id));
+	TEST_OK_LABEL(done, rc, Tcl_ListObjAppendElement(interp, doc->names, nameobj));
+
+done:
+	replace_tclobj(&nameobj, NULL);
+	return rc;
+}
+
+//>>>
 int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const char* name, uint32_t* name_id) //<<<
 {
 	int				rc = TCL_OK;
 	Tcl_HashEntry*	he = NULL;
-	int				isnew=0, names_len;
+	int				isnew=0;
 	uint32_t		id;
 	Tcl_Obj*		nameObj = NULL;
 
@@ -253,7 +265,7 @@ int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const cha
 		int			valid;
 		size_t		tmp;
 
-		replace_tclobj(&nameObj, Tcl_NewStringObj(name, -1));
+		replace_tclobj(&nameObj, Tcl_NewStringObj((const char*)name, -1));
 
 		// Verify that the name is valid for tag and attribute names
 		if (-1 == (valid = Tcl_RegExpMatchObj(interp, nameObj, td->name_valid))) {
@@ -267,9 +279,7 @@ int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const cha
 			goto done;
 		}
 
-		TEST_OK_LABEL(done, rc, Tcl_ListObjLength(interp, doc->names, &names_len));
-		TEST_OK_LABEL(done, rc, Tcl_ListObjAppendElement(interp, doc->names, nameObj));
-		id = names_len;
+		TEST_OK_LABEL(done, rc, alloc_name(interp, doc, name, -1, &id));
 		tmp = id;
 		Tcl_SetHashValue(he, UINT2PTR(tmp));
 	} else {
@@ -306,14 +316,14 @@ done:
 }
 
 //>>>
-int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char* root_name, struct doc** doc) //<<<
+int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, struct doc** doc) //<<<
 {
 	int					rc = TCL_OK;
 	size_t				memsize;
 	int					alloc_rc;
 	int					i;
 
-	*doc = malloc(sizeof(**doc));
+	*doc = ckalloc(sizeof(**doc));
 	if (unlikely(doc == NULL)) {
 		alloc_rc = errno;
 		goto alloc_failed;
@@ -330,19 +340,26 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 	memsize = sizeof(struct node)*initial_slots;
 	//DBG("Allocating %ld bytes for node storage, accomodating %d slots\n", memsize, initial_slots);
 
+#if 0
 	alloc_rc = posix_memalign((void*)&(*doc)->nodes, g_pagesize, memsize);
 	if (unlikely(alloc_rc != 0)) goto alloc_failed;
+#else
+	(*doc)->nodes = ckalloc(memsize);
+#endif
 
 	memset((*doc)->nodes, 0, memsize);
 	for (i=0; i<initial_slots; i++)
 		(*doc)->nodes[i].doc = *doc;
+
+	radish_init(&(*doc)->radish_names, 128);
+	Radish_IncrRef(&(*doc)->radish_names);
 
 	Tcl_InitHashTable(&(*doc)->name_ids, TCL_STRING_KEYS);
 	replace_tclobj(&(*doc)->names, Tcl_NewListObj(0, NULL));
 
 	(*doc)->nodelist_len = initial_slots;
 	(*doc)->root = 1;				// slot number 0 is reserved to mean NULL
-	TEST_OK_LABEL(done, rc, set_node_name(interp, &(*doc)->nodes[(*doc)->root], root_name));
+	//TEST_OK_LABEL(done, rc, set_node_name(interp, &(*doc)->nodes[(*doc)->root], root_name));
 	(*doc)->slot_next = 2;
 #if DEDUP
 	(*doc)->dedup_pool = new_dedup_pool(interp);
@@ -350,7 +367,6 @@ int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, const char*
 	(*doc)->dedup_pool = NULL;
 #endif
 
-done:
 	return rc;
 
 alloc_failed:
@@ -453,7 +469,7 @@ int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, str
 	struct node*	parent_node = NULL;
 	struct node*	nodes = parent->doc->nodes;
 
-	if (unlikely(parent->slot == 0)) {
+	if (0 && unlikely(parent->slot == 0)) {
 		Tcl_Obj*	name = NULL;
 		const char*	namestr = NULL;
 
@@ -654,10 +670,11 @@ void free_doc(struct doc** doc) //<<<
 		if (nodes[i].value && nodes[i].refcount > 0 && nodes[i].value->refCount > 0)
 			Tcl_DecrRefCount(nodes[i].value);
 
-	free((*doc)->nodes);
+	ckfree((*doc)->nodes);
 	(*doc)->nodes = NULL;
 
 	free_thing(*doc);
+	Radish_DecrRef(&(*doc)->radish_names);
 	replace_tclobj(&(*doc)->docname, NULL);
 	Tcl_DeleteHashTable(&(*doc)->name_ids);
 	replace_tclobj(&(*doc)->names, NULL);
@@ -668,7 +685,7 @@ void free_doc(struct doc** doc) //<<<
 	if ((*doc)->dedup_pool) {
 		free_dedup_pool((*doc)->dedup_pool); (*doc)->dedup_pool = NULL;
 	}
-	free(*doc); *doc = NULL;
+	ckfree(*doc); *doc = NULL;
 }
 
 //>>>
@@ -685,7 +702,7 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 		}
 	}
 
-	if (i == doc->nodelist_len) { // Ran out of slots, need to grow
+	if (unlikely(i == doc->nodelist_len)) { // Ran out of slots, need to grow
 		// +1: compensate for integer division, otherwise we're initially truncated to 0
 		int				pages = ((sizeof(struct node) * doc->nodelist_len) / g_pagesize) + 1;
 		size_t			memsize;
@@ -702,11 +719,16 @@ struct node* new_node(struct doc* doc, struct node_slot* slot_ref) //<<<
 		new_slots = (pages*g_pagesize) / sizeof(struct node);
 		memsize = sizeof(struct node)*new_slots;
 		//DBG("Doc %s hit nodelimit %d, growing to %d (%ld bytes)\n", Tcl_GetString(doc->docname), doc->nodelist_len, new_slots, memsize);
+#if 0
 		alloc_rc = posix_memalign((void*)&newnodes, g_pagesize, memsize);
 		if (unlikely(alloc_rc != 0)) goto alloc_failed;
 		memcpy(newnodes, doc->nodes, doc->nodelist_len * sizeof(struct node));
 		memset(newnodes+i, 0, sizeof(struct node)*(new_slots-i));
 		free(doc->nodes); doc->nodes = newnodes;
+#else
+		doc->nodes = ckrealloc(doc->nodes, memsize);
+		memset(doc->nodes+i, 0, sizeof(struct node)*(new_slots-i));
+#endif
 		doc->nodelist_len = new_slots;
 
 		for (j=i; j<doc->nodelist_len; j++)
@@ -737,7 +759,8 @@ static int new_doc_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *
 
 	CHECK_ARGS(1, "rootname");
 
-	TEST_OK_LABEL(done, rc, new_doc(interp, 0, Tcl_GetString(objv[1]), &doc));
+	TEST_OK_LABEL(done, rc, new_doc(interp, 0, &doc));
+	TEST_OK_LABEL(done, rc, set_node_name(interp, &doc->nodes[doc->root], (const char*)Tcl_GetString(objv[1])));
 	TEST_OK_LABEL(done, rc, get_node_slot(interp, &doc->nodes[doc->root], &slot_ref));
 	Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&slot_ref));
 
@@ -763,236 +786,98 @@ done:
 //>>>
 
 /* Parsing from XML */
-static void pcb_start_element(void* userData, const XML_Char* name, const XML_Char** atts) //<<<
-{
-	struct parse_context*	pc = (struct parse_context*)userData;
-	struct node*			node = NULL;
-	const XML_Char**		attrib = atts;
-	struct node_slot		myslot = {};
-	struct node*			attrnode = NULL;
-
-	//DBG("pcb_start_element: (%s)\n", name);
-	if (unlikely(pc->cx.doc == NULL)) {
-		// First element: create the doc and make this the root
-		TEST_OK_LABEL(err, pc->rc, new_doc(pc->interp, pc->slots_estimate, name, &pc->cx.doc));
-		node = &pc->cx.doc->nodes[pc->cx.doc->root];
-		//DBG("Created new doc %s with root %s\n", Tcl_GetString(pc->cx.doc->docname), name);
-		TEST_OK_LABEL(err, pc->rc, get_node_slot(pc->interp, node, &myslot));
-	} else {
-		node = new_node(pc->cx.doc, &myslot);
-		TEST_OK_LABEL(err, pc->rc, set_node_name(pc->interp, node, name));
-	}
-
-	while (*attrib) {
-		const XML_Char*		attrname  = *attrib++;
-		const XML_Char*		attrvalue = *attrib++;
-		struct node_slot	attrslot = {};
-
-		attrnode = new_node(pc->cx.doc, &attrslot);
-		attrnode->type = ATTRIBUTE;
-		TEST_OK_LABEL(err, pc->rc, set_node_name(pc->interp, attrnode, attrname));
-		replace_tclobj(&attrnode->value, get_string(pc->cx.doc->dedup_pool, attrvalue, -1));
-
-		TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &attrslot, &myslot, NULL));
-		attrnode = NULL;
-	}
-
-	if (likely(pc->cx.slot != 0)) {
-		//DBG("Attaching to parent %d\n", pc->cx.slot);
-		TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
-	} else {
-		//DBG("no parent %d\n", pc->cx.slot);
-	}
-	//DBG("Pushing pc->cx.slot to current element: %d -> %d (my parent: %d)\n", pc->cx.slot, myslot.slot, node->parent);
-	pc->cx.slot = myslot.slot;
-
-	return;
-
-err:
-	if (attrnode) {
-		free_node(attrnode);
-		attrnode = NULL;
-	}
-	if (node) {
-		free_node(node);
-		node = NULL;
-	}
-
-	XML_StopParser(pc->parser, XML_FALSE);
-	return;
-}
-
-//>>>
-static void pcb_end_element(void* userData, const XML_Char* name) //<<<
-{
-	struct parse_context*	pc = (struct parse_context*)userData;
-	struct node*			node = &pc->cx.doc->nodes[pc->cx.slot];
-
-	//DBG("pcb_end_element: (%s)\n", name);
-	//DBG("Popping pc->cx.slot to parent: %d <- %d\n", node->parent, pc->cx.slot);
-	pc->cx.slot = node->parent;
-}
-
-//>>>
-void pcb_text(void* userData, const XML_Char* s, int len) //<<<
-{
-	struct parse_context*	pc = (struct parse_context*)userData;
-	struct node*			node = NULL;
-	struct node_slot		myslot = {};
-	uint32_t				name_id;
-
-	//DBG("pcb_text\n");
-	node = new_node(pc->cx.doc, &myslot);
-	node->type = TEXT;
-	replace_tclobj(&node->value, get_string(pc->cx.doc->dedup_pool, s, len));
-
-	if (pc->text_node_name == NULL)
-		replace_tclobj(&pc->text_node_name, Tcl_NewStringObj(TEXT_NODE_NAME, -1));
-
-	TEST_OK_LABEL(err, pc->rc, Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->text_node_name, &name_id));
-	node->name_id = name_id;
-	TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
-
-	return;
-
-err:
-	if (node) {
-		free_node(node);
-		node = NULL;
-	}
-
-	XML_StopParser(pc->parser, XML_FALSE);
-	return;
-}
-
-//>>>
-void pcb_pi(void* userData, const XML_Char* target, const XML_Char* data) //<<<
-{
-	struct parse_context*	pc = (struct parse_context*)userData;
-	struct node*			node = NULL;
-	struct node_slot		myslot = {};
-	Tcl_Obj*				val = NULL;
-	Tcl_Obj*				ov[2] = {NULL, NULL};
-	uint32_t				name_id;
-
-	if (unlikely(pc->cx.doc == NULL)) return;
-	//DBG("pcb_pi: (%s), (%s)\n", target, data);
-	node = new_node(pc->cx.doc, &myslot);
-	node->type = PI;
-	replace_tclobj(&ov[0], get_string(pc->cx.doc->dedup_pool, target, -1));
-	replace_tclobj(&ov[1], get_string(pc->cx.doc->dedup_pool, data,   -1));
-	replace_tclobj(&node->value, Tcl_NewListObj(2, ov));
-
-	if (pc->pi_node_name == NULL)
-		replace_tclobj(&pc->pi_node_name, Tcl_NewStringObj(PI_NODE_NAME, -1));
-
-	TEST_OK_LABEL(err, pc->rc, Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->pi_node_name, &name_id));
-	node->name_id = name_id;
-	TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
-
-	goto done;
-
-err:
-	if (node) {
-		free_node(node);
-		node = NULL;
-	}
-
-done:
-	replace_tclobj(&val, NULL);
-	replace_tclobj(&ov[0], NULL);
-	replace_tclobj(&ov[1], NULL);
-
-	XML_StopParser(pc->parser, XML_FALSE);
-	return;
-}
-
-//>>>
-void pcb_comment(void* userData, const XML_Char* data) //<<<
-{
-	struct parse_context*	pc = (struct parse_context*)userData;
-	struct node*			node = NULL;
-	struct node_slot		myslot = {};
-	uint32_t				name_id;
-
-	//DBG("pcb_comment: %s\n", data);
-	if (unlikely(pc->cx.doc == NULL || pc->cx.slot == 0)) return;
-
-	node = new_node(pc->cx.doc, &myslot);
-	node->type = COMMENT;
-	replace_tclobj(&node->value, get_string(pc->cx.doc->dedup_pool, data, -1));
-
-	if (pc->comment_node_name == NULL)
-		replace_tclobj(&pc->comment_node_name, Tcl_NewStringObj(COMMENT_NODE_NAME, -1));
-
-	TEST_OK_LABEL(err, pc->rc, Hyprdom_GetNameFromObj(pc->interp, pc->cx.doc, pc->comment_node_name, &name_id));
-	node->name_id = name_id;
-	TEST_OK_LABEL(err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
-
-	return;
-
-err:
-	if (node) {
-		free_node(node);
-		node = NULL;
-	}
-
-	XML_StopParser(pc->parser, XML_FALSE);
-	return;
-}
-
-//>>>
 static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *const objv[]) //<<<
 {
 	struct node_slot		root_slot = {};
 	const char*				xmldata = NULL;
 	int						xmllen;
+	int						use_expat = 0;
+	int						i;
 	struct parse_context	pc = {
-		.interp				= interp,
-		.parser				= NULL,
-		.rc					= TCL_OK,
-		.text_node_name		= NULL,
-		.comment_node_name	= NULL,
-		.pi_node_name		= NULL,
-		.slots_estimate		= 0,
+		.interp					= interp,
+		.parser					= NULL,
+		.rc						= TCL_OK,
+		.text_node_name_id		= 0,
+		.comment_node_name_id	= 0,
+		.pi_node_name_id		= 0,
+		.slots_estimate			= 0,
 		.cx	= {
 			.doc	= NULL,
 			.slot	= 0,
 			.epoch	= 0		// epoch is always 0 for a new document's nodes
 		}
 	};
+	static char*	opts[] = {
+		"-expat",
+		NULL
+	};
+	enum optval {
+		USE_EXPAT
+	};
 
-	CHECK_ARGS(1, "xml");
+	if ((pc.rc = setjmp(pc.on_error))) goto done;
 
-	//DBG("parse_cmd\n");
-	pc.parser = XML_ParserCreate(NULL);
+	if (objc < 2 && objc > 3)
+		CHECK_ARGS(1, "?options? xml");
 
-	xmldata = Tcl_GetStringFromObj(objv[1], &xmllen);
+	// Process the options
+	for (i=1; i<objc-1; i++) {
+		int		opt;
+
+		TEST_OK_LABEL(done, pc.rc, Tcl_GetIndexFromObj(interp, objv[i], opts, "option", TCL_EXACT, &opt));
+
+		switch (opt) {
+			case USE_EXPAT:
+				use_expat = 1;
+				break;
+			default:
+				pc.rc = TCL_ERROR;
+				Tcl_SetObjResult(interp, Tcl_ObjPrintf("Unhandled option index: %d", opt));
+				goto done;
+		}
+	}
+
+	xmldata = Tcl_GetStringFromObj(objv[objc-1], &xmllen);
 
 	// Guess that we'll have about 1 node per 10 chars in the XML
 	pc.slots_estimate = xmllen / 10;
 
-	XML_SetUserData(pc.parser, &pc);
+	TEST_OK_LABEL(done, pc.rc, new_doc(pc.interp, pc.slots_estimate, &pc.cx.doc));
 
-	// TODO: how to ensure that XML_Char is char and utf-8 encoded?
-	XML_SetElementHandler              (pc.parser, pcb_start_element, pcb_end_element);
-	XML_SetCharacterDataHandler        (pc.parser, pcb_text);
-	XML_SetProcessingInstructionHandler(pc.parser, pcb_pi);
-	XML_SetCommentHandler              (pc.parser, pcb_comment);
+	TEST_OK_LABEL(done, pc.rc, alloc_name(interp, pc.cx.doc, TEXT_NODE_NAME, -1, &pc.text_node_name_id));
+	TEST_OK_LABEL(done, pc.rc, alloc_name(interp, pc.cx.doc, COMMENT_NODE_NAME, -1, &pc.comment_node_name_id));
+	TEST_OK_LABEL(done, pc.rc, alloc_name(interp, pc.cx.doc, PI_NODE_NAME, -1, &pc.pi_node_name_id));
 
-	if (XML_STATUS_ERROR == XML_Parse(pc.parser, xmldata, xmllen, 1)) {
-		if (pc.rc == TCL_OK) {
-			pc.rc = TCL_ERROR;
-			Tcl_SetObjResult(interp, Tcl_ObjPrintf("%s at line %lu",
-					XML_ErrorString(XML_GetErrorCode(pc.parser)),
-					XML_GetCurrentLineNumber(pc.parser)));
-		} else {
-			Tcl_SetObjResult(interp, Tcl_ObjPrintf("%s: %s at line %lu",
-					XML_ErrorString(XML_GetErrorCode(pc.parser)),
-					Tcl_GetString(Tcl_GetObjResult(interp)),
-					XML_GetCurrentLineNumber(pc.parser)));
+	if (use_expat) { // Parse with expat <<<
+		//DBG("parse_cmd\n");
+		pc.parser = XML_ParserCreate(NULL);
+
+		XML_SetUserData(pc.parser, &pc);
+
+		// TODO: how to ensure that XML_Char is char and utf-8 encoded?
+		XML_SetElementHandler              (pc.parser, pcb_start_element, pcb_end_element);
+		XML_SetCharacterDataHandler        (pc.parser, pcb_text);
+		XML_SetProcessingInstructionHandler(pc.parser, pcb_pi);
+		XML_SetCommentHandler              (pc.parser, pcb_comment);
+
+		if (XML_STATUS_ERROR == XML_Parse(pc.parser, xmldata, xmllen, 1)) {
+			if (pc.rc == TCL_OK) {
+				pc.rc = TCL_ERROR;
+				Tcl_SetObjResult(interp, Tcl_ObjPrintf("%s at line %lu",
+						XML_ErrorString(XML_GetErrorCode(pc.parser)),
+						XML_GetCurrentLineNumber(pc.parser)));
+			} else {
+				Tcl_SetObjResult(interp, Tcl_ObjPrintf("%s: %s at line %lu",
+						XML_ErrorString(XML_GetErrorCode(pc.parser)),
+						Tcl_GetString(Tcl_GetObjResult(interp)),
+						XML_GetCurrentLineNumber(pc.parser)));
+			}
+			goto done;
 		}
-		goto done;
+		//>>>
+	} else { // Parse using internal parse <<<
+		TEST_OK_LABEL(done, pc.rc, parse_xml_re(&pc, (const char*)xmldata, xmllen));
+		//>>>
 	}
 
 	if (likely(pc.rc == TCL_OK)) {
@@ -1003,6 +888,9 @@ static int parse_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 		}
 		TEST_OK_LABEL(done, pc.rc, get_node_slot(interp, &pc.cx.doc->nodes[pc.cx.doc->root], &root_slot));
 		Tcl_SetObjResult(interp, Hyprdom_NewSlotRef(&root_slot));
+	} else {
+		free_doc(&pc.cx.doc);
+		pc.cx.doc = NULL;
 	}
 
 done:
@@ -1011,9 +899,6 @@ done:
 		XML_ParserFree(pc.parser);
 		pc.parser = NULL;
 	}
-	replace_tclobj(&pc.text_node_name, NULL);
-	replace_tclobj(&pc.comment_node_name, NULL);
-	replace_tclobj(&pc.pi_node_name, NULL);
 	pc.cx.doc = NULL;
 	pc.interp = NULL;
 	return pc.rc;
@@ -1614,8 +1499,10 @@ static int xpath_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 		.buf	= NULL,
 		.ofs	= 0,
 		.len	= 0,
-		.rc		= TCL_OK,
-		.p		= new_dedup_pool(interp)
+#if DEDUP
+		.p		= new_dedup_pool(interp),
+#endif
+		.rc		= TCL_OK
 	};
 	Tcl_Obj*				ops = NULL;
 
@@ -1652,6 +1539,47 @@ done:
 	}
 
 	return xpath_cx.rc;
+}
+
+//>>>
+static int stats_cmd(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *const objv[]) //<<<
+{
+	int					rc = TCL_OK;
+	struct node_slot*	node_slot = NULL;
+	struct doc*			doc = NULL;
+	Tcl_DString			out;
+	Tcl_Obj*			radishobj = NULL;
+	char				numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(intptr_t)+2];
+	int					names_len;
+
+	CHECK_ARGS(1, "node");
+
+	TEST_OK_LABEL(done, rc, Hyprdom_GetNodeSlotFromObj(interp, objv[1], &node_slot));
+
+	doc = node_slot->doc;
+
+	Tcl_DStringInit(&out);
+
+	radishobj = Radish_NewRadishObj(&doc->radish_names);
+
+	Tcl_DStringAppend(&out, Tcl_GetString(radishobj), -1);
+	Tcl_DStringAppend(&out, "\n\nRadish Names: -----------------------------\n", -1);
+	radish_to_dot(&out, &doc->radish_names);
+
+	Tcl_DStringAppend(&out, "\n\nNames ", -1);
+	TEST_OK_LABEL(done, rc, Tcl_ListObjLength(interp, doc->names, &names_len));
+	sprintf(numbuf, "%d", names_len);
+	Tcl_DStringAppend(&out, numbuf, -1);
+	Tcl_DStringAppend(&out, ": -----------------------------\n", -1);
+	Tcl_DStringAppend(&out, Tcl_GetString(doc->names), -1);
+
+	Tcl_DStringAppend(&out, "\n\nDedup: -----------------------------\n", -1);
+	dedup_stats(&out, doc->dedup_pool);
+
+	Tcl_DStringResult(interp, &out);
+
+done:
+	return rc;
 }
 
 //>>>
@@ -1692,6 +1620,9 @@ DLLEXPORT int Hyprdom_Init(Tcl_Interp* interp) //<<<
 	Tcl_CreateObjCommand(interp, NS "::add",				add_cmd,				NULL, NULL);
 	Tcl_CreateObjCommand(interp, NS "::current_node",		current_node_cmd,		NULL, NULL);
 	Tcl_CreateObjCommand(interp, NS "::xpath",				xpath_cmd,				NULL, NULL);
+	Tcl_CreateObjCommand(interp, NS "::stats",				stats_cmd,				NULL, NULL);
+
+	TEST_OK_LABEL(done, rc, Radish_Init(interp));
 
 	TEST_OK_LABEL(done, rc, Tcl_PkgProvide(interp, PACKAGE_NAME, PACKAGE_VERSION));
 
@@ -1715,4 +1646,4 @@ DLLEXPORT int Hyprdom_SafeInit(Tcl_Interp* interp) //<<<
 /* tab-width: 4 */
 /* c-basic-offset: 4 */
 /* End: */
-// vim: foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4
+// vim: foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4 ft=c

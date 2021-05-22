@@ -4,6 +4,7 @@
 #define _TCLSTUFF_H
 
 #include "tcl.h"
+#include <setjmp.h>
 
 #ifdef __builtin_expect
 #	define likely(exp)		__builtin_expect(!!(exp), 1)
@@ -30,11 +31,20 @@
 		return TCL_ERROR;													\
 	}
 
-#define THROW_ERROR_LABEL( label, var, ... )				\
+#define THROW_ERROR_LABEL( label, var, interp, fmtstr, ... )	\
+	{															\
+		if (interp)												\
+			Tcl_SetObjResult(interp, Tcl_ObjPrintf((fmtstr), ##__VA_ARGS__));	\
+		var = TCL_ERROR;										\
+		goto label;												\
+	}
+
+#define THROW_ERROR_JMP( jmp, var, interp, fmtstr, ... )	\
 	{														\
-		Tcl_AppendResult(interp, ##__VA_ARGS__, NULL);		\
+		if (interp)											\
+			Tcl_SetObjResult(interp, Tcl_ObjPrintf((fmtstr), ##__VA_ARGS__));	\
 		var = TCL_ERROR;									\
-		goto label;											\
+		longjmp((jmp), 1);									\
 	}
 
 // convenience macro to check the number of arguments passed to a function
@@ -58,6 +68,12 @@
 	if (unlikely(cmd != TCL_OK)) { \
 		var = TCL_ERROR; \
 		goto label; \
+	}
+
+#define TEST_OK_JMP( jmp, var, cmd )		\
+	if (unlikely(cmd != TCL_OK)) { \
+		var = TCL_ERROR; \
+		longjmp((jmp), 1); \
 	}
 
 #define TEST_OK_BREAK(var, cmd) if (unlikely(TCL_OK != (var=(cmd)))) break;

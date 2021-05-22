@@ -7,10 +7,12 @@
 struct dedup_pool* new_dedup_pool(Tcl_Interp* interp /* may be NULL */);
 void free_dedup_pool(struct dedup_pool* p);
 Tcl_Obj* new_stringobj_dedup(struct dedup_pool* p, const char* bytes, int length);
+void dedup_stats(Tcl_DString* ds, struct dedup_pool* p);
 #	define get_string(p, bytes, length)	new_stringobj_dedup(p, bytes, length)
 #else
 #	define free_dedup_pool(p)	// nop
 #	define get_string(p, bytes, length) Tcl_NewStringObj(bytes, length)
+#	define dedup_stats(ds, p)
 #endif
 
 struct kc_entry {

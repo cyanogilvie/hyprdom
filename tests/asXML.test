@@ -16,6 +16,14 @@ test asXML-1.0 {Serialize as XML} -body { #<<<
 	unset -nocomplain root
 } -result bb3e518631b7a9bb3e767b608a2d6e13
 #>>>
+test asXML-2.0 {Serialize as XML} -body { #<<<
+	set root	[hyprdom parse {<foo ><bar  name = "fir&amp;st" /><bar name ="second" >hello&amp; text</bar ></foo   >}]
+	hyprdom asXML $root
+} -cleanup {
+	hyprdom free $root
+	unset -nocomplain root
+} -result {<foo><bar name="fir&amp;st"/><bar name="second">hello&amp; text</bar></foo>}
+#>>>
 
 ::tcltest::cleanupTests
 return

@@ -6,13 +6,17 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <strings.h>
 #include <expat.h>
 #include <errno.h>
+#include <limits.h>
 #include "tclstuff.h"
 #include "dedup.h"
 #include "tip445.h"
 #include "names.h"
 #include "xpath1.h"
+#include "radish.h"
+//#include "xml.h"
 
 // Taken from tclInt.h:
 #if !defined(INT2PTR) && !defined(PTR2INT)
@@ -24,6 +28,11 @@
 #   define PTR2UINT(p) ((unsigned int)(uintptr_t)(p))
 #endif
 
+#define MAX_CHAR_LEN_DECIMAL_INTEGER(type) (10*sizeof(type)*CHAR_BIT/33 + 2)
+
+#define TEXT_NODE_NAME		"_text_"
+#define PI_NODE_NAME		"_pi_"
+#define COMMENT_NODE_NAME	"_comment_"
 
 enum node_type {
 	ELEMENT = 0,
@@ -40,8 +49,9 @@ struct doc {
 	Tcl_Obj*			docname;		// name(doc), thing(docname) retrieves this struct
 	uint32_t			nodelist_len;	// The allocated space, not all slots are necessarily used
 	int32_t				refcount;
-	Tcl_HashTable		name_ids;		// Map of name -> numeric id
 	Tcl_Obj*			names;			// reverse of name_ids, id'th element is the name
+	struct radish		radish_names;	// A radix-like trie mapping name -> name_id
+	Tcl_HashTable		name_ids;		// Map of name -> numeric id
 	uint32_t			slot_next;		// Next index into nodes[] to scan for free nodes when allocating new ones
 	uint32_t			root;
 	struct node*		nodes;			// Array of nodes
@@ -80,17 +90,7 @@ struct thread_data {
 	Tcl_Obj*		name_valid;
 };
 
-
-struct parse_context {
-	Tcl_Interp*			interp;
-	XML_Parser			parser;
-	int					rc;
-	uint32_t			slots_estimate;
-	struct node_slot	cx;
-	Tcl_Obj*			text_node_name;
-	Tcl_Obj*			comment_node_name;
-	Tcl_Obj*			pi_node_name;
-};
+#include "parse_xml.h"
 
 void breakpoint();
 
@@ -102,5 +102,13 @@ int Hyprdom_GetDocByName(Tcl_Interp* interp /* may be NULL */, const char* docna
 int get_name_id(Tcl_Interp* interp /* may be NULL */, struct doc* doc, const char* name, uint32_t* name_id);
 void detach_node(struct node* node);
 void DecrRefNode(struct node* node);
+int new_doc(Tcl_Interp* interp /* can be NULL */, int initial_slots, struct doc** doc);
+struct node* new_node(struct doc* doc, struct node_slot* slot_ref);
+int Hyprdom_GetNameFromObj(Tcl_Interp* interp, struct doc* doc, Tcl_Obj* obj, uint32_t* name_id);
+int attach_node(Tcl_Interp* interp /* can be NULL */, struct node_slot* new, struct node_slot* parent, struct node_slot* before);
+void free_node(struct node* node);
+int alloc_name(Tcl_Interp* interp, struct doc* doc, const char* restrict name, uint32_t len, uint32_t* new_id);
+int get_node_slot(Tcl_Interp* interp /* can be NULL */, struct node* node, struct node_slot* slot_ref);
+int set_node_name(Tcl_Interp* interp /* may be NULL */, struct node* node, const char* name);
 
 #endif
