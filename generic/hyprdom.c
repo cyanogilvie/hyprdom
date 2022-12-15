@@ -39,7 +39,7 @@ Tcl_ObjType hyprdom_node = {
 
 void free_internal_rep_hyprdom_node(Tcl_Obj* obj) //<<<
 {
-	Tcl_ObjIntRep*	ir = Tcl_FetchIntRep(obj, &hyprdom_node);
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &hyprdom_node);
 
 	if (ir) {
 		struct node_slot*		slot_ref = (struct node_slot*)ir;
@@ -53,7 +53,7 @@ void free_internal_rep_hyprdom_node(Tcl_Obj* obj) //<<<
 //>>>
 void update_string_rep_hyprdom_node(Tcl_Obj* obj) //<<<
 {
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &hyprdom_node);
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &hyprdom_node);
 	struct node_slot*	slot_ref = (struct node_slot*)ir;
 	Tcl_DString			ds;
 	char				numbuf[MAX_CHAR_LEN_DECIMAL_INTEGER(uint32_t)+1];		// Needs to be big enough to hold the maximum string length of %d from a uint32_t, plus the null terminator
@@ -84,7 +84,7 @@ void update_string_rep_hyprdom_node(Tcl_Obj* obj) //<<<
 int Hyprdom_GetNodeSlotFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct node_slot** slot_ref) //<<<
 {
 	int					rc = TCL_OK;
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &hyprdom_node);
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &hyprdom_node);
 
 	if (ir == NULL) {
 		struct node_slot	new_slot_ref;
@@ -111,9 +111,9 @@ int Hyprdom_GetNodeSlotFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct node_slo
 
 		new_slot_ref.epoch = tmp;
 
-		Tcl_FreeIntRep(obj);
-		Tcl_StoreIntRep(obj, &hyprdom_node, (Tcl_ObjIntRep*)&new_slot_ref);
-		ir = Tcl_FetchIntRep(obj, &hyprdom_node);
+		Tcl_FreeInternalRep(obj);
+		Tcl_StoreInternalRep(obj, &hyprdom_node, (Tcl_ObjInternalRep*)&new_slot_ref);
+		ir = Tcl_FetchInternalRep(obj, &hyprdom_node);
 	}
 
 	*slot_ref = (struct node_slot*)ir;
@@ -132,12 +132,12 @@ done:
 //>>>
 Tcl_Obj* Hyprdom_NewSlotRef(const struct node_slot* slot_ref) //<<<
 {
-	Tcl_Obj*		res = Tcl_NewObj();
-	Tcl_ObjIntRep	ir;
+	Tcl_Obj*			res = Tcl_NewObj();
+	Tcl_ObjInternalRep	ir;
 
 	memcpy(&ir, slot_ref, sizeof(*slot_ref));
-	Tcl_FreeIntRep(res);
-	Tcl_StoreIntRep(res, &hyprdom_node, &ir);
+	Tcl_FreeInternalRep(res);
+	Tcl_StoreInternalRep(res, &hyprdom_node, &ir);
 	Tcl_InvalidateStringRep(res);
 
 	return res;
@@ -157,21 +157,21 @@ Tcl_ObjType hyprdom_name = {
 int Hyprdom_GetNameFromObj(Tcl_Interp* interp, struct doc* doc, Tcl_Obj* obj, uint32_t* name_id) //<<<
 {
 	int					rc = TCL_OK;
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &hyprdom_name);
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &hyprdom_name);
 
 	if (ir == NULL) {
-		const char*		name = Tcl_GetString(obj);
-		Tcl_ObjIntRep	newir;
-		uint32_t		id;
+		const char*			name = Tcl_GetString(obj);
+		Tcl_ObjInternalRep	newir;
+		uint32_t			id;
 
 		TEST_OK_LABEL(done, rc, get_name_id(interp, doc, name, &id));
 
 		newir.ptrAndLongRep.ptr = doc;
 		newir.ptrAndLongRep.value = id;
 
-		Tcl_FreeIntRep(obj);
-		Tcl_StoreIntRep(obj, &hyprdom_name, &newir);
-		ir = Tcl_FetchIntRep(obj, &hyprdom_name);
+		//Tcl_FreeInternalRep(obj);
+		Tcl_StoreInternalRep(obj, &hyprdom_name, &newir);
+		ir = Tcl_FetchInternalRep(obj, &hyprdom_name);
 	} else if (ir->ptrAndLongRep.ptr != doc) {
 		const char*	name = Tcl_GetString(obj);
 		uint32_t	id;
@@ -1601,10 +1601,10 @@ DLLEXPORT int Hyprdom_Init(Tcl_Interp* interp) //<<<
 
 	g_pagesize = sysconf(_SC_PAGESIZE);
 
-	// Check that our custom node_slot intrep fits within Tcl_ObjIntRep
-	if (sizeof(struct node_slot) > sizeof(Tcl_ObjIntRep)) {
+	// Check that our custom node_slot intrep fits within Tcl_ObjInternalRep
+	if (sizeof(struct node_slot) > sizeof(Tcl_ObjInternalRep)) {
 		rc = TCL_ERROR;
-		Tcl_SetObjResult(interp, Tcl_ObjPrintf("On this platform, our node_slot struct doesn't fit into a Tcl_ObjIntRep, sorry"));
+		Tcl_SetObjResult(interp, Tcl_ObjPrintf("On this platform, our node_slot struct doesn't fit into a Tcl_ObjInternalRep, sorry"));
 		goto done;
 	}
 

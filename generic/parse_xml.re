@@ -393,8 +393,9 @@ top:
 		}
 
 		<elemcontent>	"</"					=> etagtail {
+			struct node*			node = NULL;
+
 			if (translated) {
-				struct node*			node = NULL;
 				struct node_slot		myslot = {};
 				const char*				text_val;
 				int						text_len;
@@ -408,13 +409,20 @@ top:
 				replace_tclobj(&node->value, get_string(pc->cx.doc->dedup_pool, text_val, text_len));
 
 				node->name_id = pc->text_node_name_id;
-				TEST_OK_LABEL(elemcontent_text_err, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
+				TEST_OK_LABEL(elemcontent_text_err2, pc->rc, attach_node(pc->interp, &myslot, &pc->cx, NULL));
 
 				translated = 0;
 				Tcl_DStringFree(&val);
 			}
 
 			goto getname;
+
+		elemcontent_text_err2:
+			if (node) {
+				free_node(node);
+				node = NULL;
+			}
+			longjmp(pc->on_error, 1);
 		}
 
 		<etagtail>	@mstart NameChar* @mend WS? ">"	{

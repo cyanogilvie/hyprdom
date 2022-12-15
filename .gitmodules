@@ -1,15 +1,16 @@
 [submodule "tools/re2c"]
 	path = tools/re2c
 	url = https://github.com/skvadrik/re2c
+	shallow = true
 [submodule "tools/packcc"]
 	path = tools/packcc
 	url = https://github.com/arithy/packcc
+	shallow = true
 [submodule "tools/sqlite"]
 	path = tools/sqlite
 	url = https://github.com/sqlite/sqlite.git
-[submodule "sqlite"]
 	shallow = true
-[submodule "packcc"]
-	shallow = true
-[submodule "re2c"]
+[submodule "tclconfig"]
+	path = tclconfig
+	url = https://github.com/tcltk/tclconfig
 	shallow = true

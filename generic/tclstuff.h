@@ -53,11 +53,18 @@
 // not include the objv[0] object (the function itself)
 #define CHECK_ARGS(expected, msg)										\
 	if (objc != expected + 1) {											\
-		Tcl_ResetResult( interp );										\
-		Tcl_AppendResult( interp, "Wrong # of arguments.  Must be \"",	\
-						  msg, "\"", NULL );							\
+		Tcl_WrongNumArgs(interp, 1, objv, msg);							\
 		return TCL_ERROR;												\
 	}
+
+#define CHECK_ARGS_LABEL(label, rc, msg) \
+	do { \
+		if (objc != A_objc) { \
+			Tcl_WrongNumArgs(interp, A_cmd+1, objv, "method ?arg ...?"); \
+			rc = TCL_ERROR; \
+			goto label; \
+		} \
+	} while(0);
 
 
 // A rather frivolous macro that just enhances readability for a common case
@@ -93,12 +100,14 @@ static inline void release_tclobj(Tcl_Obj** obj)
 }
 static inline void replace_tclobj(Tcl_Obj** target, Tcl_Obj* replacement)
 {
-	if (*target) {
-		Tcl_DecrRefCount(*target);
-		*target = NULL;
-	}
+	Tcl_Obj*	old = *target;
+
 	*target = replacement;
 	if (*target) Tcl_IncrRefCount(*target);
+	if (old) {
+		Tcl_DecrRefCount(old);
+		old = NULL;
+	}
 }
 
 #if DEBUG

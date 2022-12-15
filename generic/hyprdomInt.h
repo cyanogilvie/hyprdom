@@ -75,7 +75,7 @@ struct node {
 };
 
 
-// a reference to an entry in doc->nodes, with epoch info.  Fits within Tcl_ObjIntRep
+// a reference to an entry in doc->nodes, with epoch info.  Fits within Tcl_ObjInternalRep
 #pragma pack(push, 1)
 struct node_slot {
 	struct doc*		doc;

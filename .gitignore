@@ -3,7 +3,6 @@
 *.so
 core
 .gitignore
-tclconfig
 Makefile
 autom4te.cache
 config.log

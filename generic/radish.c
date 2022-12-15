@@ -216,7 +216,7 @@ Tcl_ObjType radish_objtype = {
 
 void free_internal_rep_radish(Tcl_Obj* obj) //<<<
 {
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &radish_objtype);
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &radish_objtype);
 	struct radish*		r = ir->ptrAndLongRep.ptr;
 
 	if (r) {
@@ -228,9 +228,9 @@ void free_internal_rep_radish(Tcl_Obj* obj) //<<<
 //>>>
 void dup_internal_rep_radish(Tcl_Obj* src, Tcl_Obj* dup) //<<<
 {
-	Tcl_ObjIntRep*	ir = Tcl_FetchIntRep(src, &radish_objtype);
-	Tcl_ObjIntRep	newir;
-	size_t			nodes_size;
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(src, &radish_objtype);
+	Tcl_ObjInternalRep	newir;
+	size_t				nodes_size;
 
 	struct radish*	src_r = ir->ptrAndLongRep.ptr;
 	struct radish*	dst_r = ckalloc(sizeof(*dst_r));
@@ -244,7 +244,7 @@ void dup_internal_rep_radish(Tcl_Obj* src, Tcl_Obj* dup) //<<<
 	Radish_IncrRef(newir.ptrAndLongRep.ptr = dst_r);
 	newir.ptrAndLongRep.value = 0;
 
-	Tcl_StoreIntRep(dup, &radish_objtype, &newir);
+	Tcl_StoreInternalRep(dup, &radish_objtype, &newir);
 }
 
 //>>>
@@ -288,7 +288,7 @@ static inline void update_string_rep_slot_body(Tcl_DString* ds, Tcl_DString* nod
 //>>>
 void update_string_rep_radish(Tcl_Obj* obj) //<<<
 {
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &radish_objtype);
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &radish_objtype);
 	struct radish*		r = ir->ptrAndLongRep.ptr;
 	Tcl_DString			ds;
 
@@ -310,14 +310,14 @@ void update_string_rep_radish(Tcl_Obj* obj) //<<<
 int Radish_GetRadishFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct radish** radish) //<<<
 {
 	int					rc = TCL_OK;
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &radish_objtype);
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &radish_objtype);
 	struct radish*		r = NULL;
 
 	if (ir == NULL) {
-		Tcl_Obj**		slotv;
-		int				slotc;
-		int				i;
-		Tcl_ObjIntRep	newir;
+		Tcl_Obj**			slotv;
+		int					slotc;
+		int					i;
+		Tcl_ObjInternalRep	newir;
 
 		TEST_OK_LABEL(done, rc, Tcl_ListObjGetElements(interp, obj, &slotc, &slotv));
 
@@ -394,9 +394,9 @@ int Radish_GetRadishFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct radish** ra
 			newir.ptrAndLongRep.ptr = r;
 			newir.ptrAndLongRep.value = 0;
 
-			Tcl_FreeIntRep(obj);
-			Tcl_StoreIntRep(obj, &radish_objtype, &newir);
-			ir = Tcl_FetchIntRep(obj, &radish_objtype);
+			Tcl_FreeInternalRep(obj);
+			Tcl_StoreInternalRep(obj, &radish_objtype, &newir);
+			ir = Tcl_FetchInternalRep(obj, &radish_objtype);
 		}
 	}
 
@@ -431,13 +431,12 @@ void Radish_DecrRef(struct radish* radish) //<<<
 //>>>
 Tcl_Obj* Radish_NewRadishObj(struct radish* radish) //<<<
 {
-	Tcl_Obj*		res = Tcl_NewObj();
-	Tcl_ObjIntRep	ir;
+	Tcl_Obj*			res = Tcl_NewObj();
+	Tcl_ObjInternalRep	ir;
 
 	Radish_IncrRef(ir.ptrAndLongRep.ptr = radish);
 
-	Tcl_FreeIntRep(res);
-	Tcl_StoreIntRep(res, &radish_objtype, &ir);
+	Tcl_StoreInternalRep(res, &radish_objtype, &ir);
 	Tcl_InvalidateStringRep(res);
 
 	return res;
